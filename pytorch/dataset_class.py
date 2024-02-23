@@ -1,271 +1,325 @@
 #!/usr/bin/env python
-import os
+from pathlib import Path
 import numpy as np
 import pandas as pd
-import torch
-
-from scipy.ndimage import center_of_mass
-from skimage.util import random_noise
+import SimpleITK as sitk
+from sklearn.preprocessing import MinMaxScaler
 from skimage.transform import rotate
-import elasticdeform
-from gbm_project.data_prep import retrieve_data
+from skimage.util import random_noise
 
-class DatasetGenerator(torch.utils.data.Dataset):
+from hnc_project import data_prep as dp
+import torch
+from torch_geometric.data import Dataset, Data
+import torch_geometric.transforms as T
+
+import elasticdeform
+
+
+class DatasetGeneratorRadiomics(Dataset):
     """
     generate images for pytorch dataset
     """
-    def __init__(self, data_indices, labels, data_dir='../../data/upenn_GBM/images/NIfTI-files/', csv_dir='../../data/upenn_GBM/csvs/radiomic_features_CaPTk/', modality=['FLAIR'], dim=(70,86,86), n_channels=3, to_augment=False, make_augment = False, to_encode=False, to_slice=False, to_3D_slice=False, n_slices=10, augment_types=('noise', 'flip', 'rotate', 'deform'), seed=42, transform=None, target_transform=None):
-        self.labels = labels
-        self.data_indices = data_indices
+    def __init__(self, patch_dir='../../data/HNSCC/HNSCC_Nii_222_50_50_60_Crop_v2', radiomics_dir='../../data/HNSCC/radiomics',  edge_file='../../data/HNSCC/edge_staging/edges_112723.pkl', locations_file='../../data/HNSCC/edge_staging/centered_locations_010424.pkl', version='1', pre_transform=None):
+       
+        self.config = config 
+        self.patch_path = Path(patch_dir)
+        self.radiomics_path = Path(radiomics_dir)
+        self.data_path = Path('../../data/HNSCC')
+        self.edge_dict = pd.read_pickle(edge_file)
+        self.locations = pd.read_pickle(locations_file)
+        self.pdir = self.data_path.joinpath(f"graph_staging/{self.patch_path.name}_{edge_file.split('/')[-1].replace('.pkl', '')}_{version}")
+        self.patients = [pat.as_posix().split('/')[-1] for pat in self.patch_path.glob('*/')]
+        self.years = 2
 
-        if len(modality) > 1:
-            self.n_channels = len(modality)
-        else:
-            self.n_channels = n_channels
-        self.dim = dim
-        self.n_slices = n_slices
-        self.to_slice = to_slice
-        self.to_3D_slice = to_3D_slice
-        self.rng_noise = np.random.default_rng(seed)
-        self.rng_rotate = np.random.default_rng(seed)
-        self.data_dir = data_dir
-        self.csv_dir = csv_dir
-        self.modality = modality
-        self.to_augment = to_augment
-        self.make_augment = make_augment
-        self.augment_types = augment_types
-        self.to_encode = to_encode
-        self.radiomics = None
-        self.to_slice = to_slice
-        self.transform = transform
-        self.target_transform = target_transform
+        labels = dp.retrieve_patients(self.data_path)
+        y = labels.loc[self.patients]
+        self.y = y['has_dm'] & (y['survival_dm'] < self.years)
 
-        if self.to_encode:
-            if self.modality[0] == 'mod':
-                modality_tmp = 'FLAIR'
-            else:
-                modality_tmp = self.modality[0]
-            temp_radiomics = retrieve_data(self.csv_dir, modality_tmp)[0]
-            self.radiomics = temp_radiomics.loc[self.data_indices, 2:]
-            scaler = StandardScaler()
+        super(DatasetGeneratorRadiomics, self).__init__(pre_transform=pre_transform)
 
-            temp_index = self.radiomics.index.tolist()
-            temp_column = self.radiomics.columns.tolist()
-            temp_scaled = scaler.fit_transform(self.radiomics)
+    @property
+    def raw_paths(self):
+        return [self.raw_dir.joinpath(pat) for pat in self.patients]
 
-            self.radiomics = pd.DataFrame(temp_scaled, columns=temp_column, index=temp_index)
-        
-        if self.to_augment:
-            augment_idx = {}
-            for aug in self.augment_types:
-                augment_idx[aug] = self.labels.copy(deep=True)
-                augment_idx[aug].index = augment_idx[aug].index+'_'+aug
+    @property
+    def raw_dir(self):
+        return self.patch_path
 
-                self.data_indices = self.data_indices.append(augment_idx[aug].index)
+    @property
+    def processed_dir(self):
+        return self.pdir 
 
-            self.labels = pd.concat([self.labels, *augment_idx.values()])
-            
-            # number of negatives to remove to even out labels
-            # its easier to augment and then randomly remove up to a certain amount than to add a radom
-            # assortment of augmentations on top of what is already there. 
-            to_remove = int(len(self.labels) - 2*np.sum(self.labels))
-
-            # patient indices to remove, randomly sampled
-            if to_remove > 0:
-                idx_to_remove = self.labels[self.labels==0].dropna().sample(frac=1, random_state=42)[-to_remove:].index.tolist()
-            elif ro_remove < 0:
-                idx_to_remove = self.labels[self.labels==1].dropna().sample(frac=1, random_state=42)[-to_remove:].index.tolist()
-            else:
-                idx_to_remove = []
-
-            self.labels = self.labels.drop(idx_to_remove)
-            self.data_indices = self.data_indices.drop(idx_to_remove)
-
-        else:
-            idx_to_remove = [label for label in self.labels.index.tolist() if len(label.split('_'))>2]
-            self.labels = self.labels.drop(idx_to_remove)
-            self.data_indices = self.data_indices.drop(idx_to_remove)
-            
+    @property
+    def processed_file_names(self):
+        return [f"graph_{idx}.pt" for idx, pat in enumerate(self.patients)]
 
 
+    def download(self):
+        pass
 
-        
+    # function for using radiomics as node features of the graph.
+    def process(self):
+        print("processed graph files not present, starting graph production")
+        for idx, pat in enumerate(self.patients):
+            print(f"    {pat}, {idx}")
+            graph_array = []
+            edge_idx_map = {} 
+ 
+            patches = pd.read_pickle(self.radiomics_path.joinpath(f"features_{pat}.pkl"))
 
+            for i, patch in enumerate(patches.keys()):
+                edge_idx_map[patch] = i
 
-    def __len__(self):
-        return len(self.labels)
+                node_features = np.array(list(patches[patch].values()))
+                print(f"        {patch}")
+                graph_array.append(node_features)
 
-    def __getitem__(self, idx):
-        if torch.is_tensor(idx):
-            idx=idx.tolist()
+            graph_array = np.array(graph_array)
+            if self.pre_transform is not None:
+                graph_array = self.pre_transform.transform(graph_array)
 
-        pat_idx = self.labels.index.values[idx]
-        label = self.labels.loc[pat_idx]
-
-
-        # retrieve array (image) based on number of modalities
-        if len(self.modality) < 2:
-            in_arr = self.get_pat_array(pat_idx)
-        else:
-            in_arr = self.get_pat_mod_array(pat_idx)
-
-        # take n_slices on either side of the centroid in the depth dimension
-        if self.to_slice:
-            com = center_of_mass(in_arr[0])
-            depth_com = int(com[0])
-            in_arr = in_arr[:, (depth_com-self.n_slices):(depth_com+self.n_slices), :, :]
-            if len(in_arr[0]) < self.n_slices*2:
-                n_pad = self.n_slices*2 - len(in_arr[0])
-                in_arr = np.pad(in_arr, pad_width=((0, 0), 
-                                                   (0, n_pad),
-                                                   (0, 0),
-                                                   (0, 0)),
-                                                   mode='constant', constant_values=0)
-        if self.to_3D_slice:
-            com = center_of_mass(in_arr[0])
-            depth_com = int(com[0])
-            height_com = int(com[1])
-            width_com = int(com[2])
-
-            in_arr = in_arr[:, (max(depth_com-self.n_slices, 0)):(depth_com+self.n_slices), (max(height_com-self.n_slices,0)):(height_com+self.n_slices), (max(width_com-self.n_slices, 0)):(width_com+self.n_slices)]
-            n_pad_depth = self.n_slices*2 - len(in_arr[0])
-            n_pad_height = self.n_slices*2 - len(in_arr[0, 0])
-            n_pad_width = self.n_slices*2 - len(in_arr[0, 0, 0])
-            in_arr = np.pad(in_arr, pad_width=((0, 0), 
-                                                   (0, n_pad_depth),
-                                                   (0, n_pad_height),
-                                                   (0, n_pad_width)),
-                                                   mode='constant', constant_values=0)
-
-        if self.n_channels == 7:
-            in_arr = in_arr[4:]
-        if self.n_channels == 4:
-            in_arr = in_arr[0:4]
-        if self.transform:
-            in_arr = self.transform(in_arr)
-        if self.target_transform:
-            label = self.target_transform(label)
-        if self.n_channels == 1:
-            in_arr = np.expand_dims(in_arr, axis=0)
-
-        return torch.from_numpy(in_arr), torch.tensor(label)
-
-
-    def get_pat_array(self, pat_idx):
-        '''
-        retrieve image array if only one modality is in use
-        applies transformations as necessary
-        '''
-        
-        if self.to_augment:
-            if self.make_augment:
-                if len(pat_idx.split('_')) == 3:
-                    in_arr = np.load(os.path.join(self.data_dir,'_'.join(pat_idx.split('_')[:2])+'_'+self.modality[0]+ '.npy'))
+            if len(self.edge_dict[pat]) == 0:
+                node_pos = torch.from_numpy(np.array([self.locations[pat][gtv] for gtv in patches.keys()]))
+                if self.config['with_edge_attr']:
+                    data = Data(x=torch.tensor(graph_array, dtype=torch.float), edge_index=torch.tensor([], dtype=torch.int64), edge_attr=torch.tensor([]), pos=node_pos, y=torch.tensor([[int(self.y[pat])]], dtype=torch.float))
                 else:
-                    in_arr = np.load(os.path.join(self.data_dir,pat_idx+'_'+self.modality[0]+ '.npy'))
+                    data = Data(x=torch.tensor(graph_array, dtype=torch.float), edge_index=torch.tensor([], dtype=torch.int64), pos=node_pos, y=torch.tensor([[int(self.y[pat])]], dtype=torch.float))
             else:
-                in_arr = np.load(os.path.join(self.data_dir,pat_idx+'_'+self.modality[0]+ '.npy'))
+                edges = torch.tensor(np.array([[edge_idx_map[gtv], edge_idx_map[gtv2]] for gtv, gtv2 in self.edge_dict[pat]]), dtype=torch.int64)
+                node_pos = torch.from_numpy(np.array([self.locations[pat][gtv] for gtv in patches.keys()]))
+                data = Data(x=torch.tensor(graph_array, dtype=torch.float), edge_index=edges.t().contiguous(), pos=node_pos, y=torch.tensor([[int(self.y[pat])]], dtype=torch.float))
+
+            if self.config['with_edge_attr'] and len(self.edge_dict[pat]) != 0:
+                sph_transform = T.Spherical()
+                norm_transform = T.Cartesian()
+                dist_transform = T.Distance()
+                #data = sph_transform(data) 
+                #data = dist_transform(data) 
+                data = norm_transform(data) 
+            
+
+            torch.save(data, self.processed_dir.joinpath(f"graph_{idx}.pt"))
+
+
+    def len(self):
+        return len(self.patients)
+
+
+    def get(self, idx):
+        data = torch.load(self.processed_dir.joinpath(f"graph_{idx}.pt"))
+        return data
+
+
+
+class DatasetGeneratorImage(Dataset):
+    """
+    generate images for pytorch dataset
+    """
+    def __init__(self, patch_dir='../../data/HNSCC/HNSCC_Nii_222_50_50_60_Crop_v2',  edge_file='../../data/HNSCC/edge_staging/edges_112723.pkl', locations_file='../../data/HNSCC/edge_staging/centered_locations_010424.pkl', clinical_data=None, version='1', pre_transform=None, config=None):
+        self.config = config 
+        self.patch_path = Path(patch_dir)
+        self.data_path = Path('../../data/HNSCC')
+        self.edge_dict = pd.read_pickle(edge_file)
+        self.locations = pd.read_pickle(locations_file)
+        self.pdir = self.data_path.joinpath(f"graph_staging/{self.patch_path.name}_{edge_file.split('/')[-1].replace('.pkl', '')}_{version}")
+        self.patients = [pat.as_posix().split('/')[-1] for pat in self.patch_path.glob('*/')]
+        self.years = 2
+
+        self.rng_noise = np.random.default_rng(42)
+        self.rng_rotate = np.random.default_rng(42)
+           
+        if self.config['use_clinical']:
+            self.clinical_features = pd.read_pickle(clinical_data)
         else:
-            in_arr = np.load(os.path.join(self.data_dir,pat_idx+'_'+self.modality[0]+ '.npy'))
+            self.clinical_features = None
+ 
+        labels = dp.retrieve_patients(self.data_path)
+        y = labels.loc[self.patients]
+        self.y = y['has_dm'] & (y['survival_dm'] < self.years)
 
-        # take the first three images such that they are arranged into a single image with 3 channels.`
+        if self.config['augment']:
+            #aug_pos_pats = self.y[self.y==1]
+            aug_pats = self.y
+            if 'rotation' in self.config['augments']:
+                for rot in range(self.config['n_rotations']):
+                    aug_rot_pats = aug_pats.copy(deep=True)
+                    aug_rot_pats.index = aug_pats.index + f"_rotation_{rot}"
+                    self.patients.extend(aug_rot_pats.index)
+                    
+                    self.y = pd.concat([self.y, aug_rot_pats])
 
-        if self.to_augment:
-            if self.make_augment:
-                aug = pat_idx.split('_')[-1]
-                if aug in self.augment_types:
-                    if 'flip' in aug:
-                        in_arr = self.apply_flip(in_arr)
-                    if 'rotate' in aug:
-                        in_arr = self.apply_rotation(in_arr)
-                    if 'noise' in aug:
-                        in_arr = self.apply_noise(in_arr)
-                    if 'deform' in aug:
-                        in_arr = self.apply_deformation(in_arr)
+                #aug_rot_pats = aug_pats.copy(deep=True)
+                #aug_rot_pats.index = aug_pats.index + f"_rotation_0"
+                #self.patients.extend(aug_rot_pats.index)
+                
+                #self.y = pd.concat([self.y, aug_rot_pats])
+                
 
-        return in_arr
+            if 'noise' in self.config['augments']:
+                aug_noise_pats = aug_pats.copy(deep=True)
+                aug_noise_pats.index = aug_pats.index + f"_noise"
+                self.patients.extend(aug_noise_pats.index)
+                self.y = pd.concat([self.y, aug_noise_pats])
+
+            if 'deform' in self.config['augments']:
+                for dfm in range(self.config['n_deforms']):
+                    aug_deform_pats = aug_pats.copy(deep=True)
+                    aug_deform_pats.index = aug_pats.index + f"_deform_{dfm}"
+                    self.patients.extend(aug_deform_pats.index)
+                    self.y = pd.concat([self.y, aug_deform_pats])
+                 
+            if 'flip' in self.config['augments']:
+                aug_flip_pats = aug_pats.copy(deep=True)
+                aug_flip_pats.index = aug_pats.index + f"_flip"
+                self.patients.extend(aug_flip_pats.index)
+                self.y = pd.concat([self.y, aug_flip_pats])
+          
+             
 
 
-    def get_pat_mod_array(self, pat_idx):
-        '''
-        retrieve image array if multiple modalities are in use.
-        Channels will then be modality based instead of tumor section based
-        applies transformations as necessary
-        '''
+        super(DatasetGeneratorImage, self).__init__(pre_transform=pre_transform)
 
-        mod_arr = np.empty((len(self.modality), *self.dim))
+    @property
+    def raw_paths(self):
+        return [self.raw_dir.joinpath(pat) for pat in self.patients]
 
-        for imod, mod in enumerate(self.modality):
-            if self.to_augment:
-                if len(pat_idx.split('_')) == 3:
-                    in_arr = np.load(os.path.join(self.data_dir,'_'.join(pat_idx.split('_')[:2])+'_'+mod+ '.npy'))
-                else:
-                    in_arr = np.load(os.path.join(self.data_dir,pat_idx+'_'+mod+ '.npy'))
+    @property
+    def raw_dir(self):
+        return self.patch_path
+
+    @property
+    def processed_dir(self):
+        return self.pdir 
+
+    @property
+    def processed_file_names(self):
+        return [f"graph_{idx}.pt" for idx, pat in enumerate(self.patients)]
+
+
+    def download(self):
+        pass
+
+    # Function for processing images as node features of graph (doesn't work properly ---- yet ...
+    # for this function to be usable again, would need to add ResNet or similar to process the node feature image to etract features for use as node features
+    def process(self):
+        print("processed graph files not present, starting graph production")
+        norm_filter = sitk.NormalizeImageFilter()
+        for idx, full_pat in enumerate(self.patients):
+            pat = full_pat.split('_')[0]
+            print(f"    {full_pat}, {idx}")
+            graph_array = []
+            edge_idx_map = {}
+            patches = list(self.patch_path.joinpath(pat).glob('image*.nii.gz'))
+
+            # reorder patches glob so that GTVp will always be first entry (if it exists) (and so will always have an index of 0 in the graph)
+            if np.any(['GTVp' in str(l) for l in patches]):
+                patches_reorder = patches[-1:]
+                patches_reorder.extend(patches[:-1])
+                patches = patches_reorder
+    
+            if 'rotation' in full_pat:
+                angle = self.rng_rotate.integers(-30, high=30)
+
+            patch_list = []
+            for i, patch in enumerate(patches):
+                patch_name = patch.as_posix().split('/')[-1].split('_')[-1].replace('.nii.gz','')
+                patch_list.append(patch_name)
+
+                edge_idx_map[patch_name] = i
+                patch_image = sitk.ReadImage(patch)
+                patch_struct = sitk.ReadImage(str(patch).replace('image', 'Struct'))
+
+                #Image normalization done in SimpleITK
+                #patch_image_norm = norm_filter.Execute(patch_image)
+
+                
+
+                #Image currently given as 2-channels as image and mask
+                patch_array = sitk.GetArrayFromImage(patch_image)
+                struct_array = sitk.GetArrayFromImage(patch_struct)
+
+                if self.pre_transform is not None:
+                    if self.pre_transform == 'MinMax':
+                        patch_std = (patch_array - patch_array.min()) / (patch_array.max() - patch_array.min())
+                        patch_scaled = patch_std * (1 - (-1)) + (-1)
+
+
+                if 'rotation' in full_pat:
+                    patch_scaled = self.apply_rotation(patch_scaled, angle)
+                    struct_array = self.apply_rotation(struct_array, angle)
+
+                if 'noise' in full_pat:
+                    patch_scaled = self.apply_noise(patch_scaled)
+
+                if 'flip' in full_pat:
+                    patch_scaled = self.apply_flip(patch_scaled)
+                    struct_array = self.apply_flip(struct_array)
+
+                if 'deform' in full_pat:
+                    [patch_scaled, struct_array] = self.apply_deformation(patch_scaled, struct_array)
+
+
+                node_image = np.stack((patch_scaled, struct_array))
+                #node_image = np.moveaxis(node_image, [0, 1, 2, 3], [-1, -4, -3, -2]) 
+                print(f"        {patch_name}")
+                print(f"        {np.shape(node_image)}")
+                graph_array.append(node_image)
+
+            graph_array = np.array(graph_array)
+
+            graph_array = torch.tensor(graph_array, dtype=torch.float)
+
+            #graph_array = torch.permute(graph_array, (3, 0, 1, 2))
+            node_pos = torch.from_numpy(np.array([self.locations[pat][gtv] for gtv in patch_list]))
+            if self.config['use_clinical']: 
+                clinical = torch.tensor(pd.to_numeric(self.clinical_features.loc[pat]).values, dtype=torch.float).unsqueeze(0)
             else:
-                in_arr = np.load(os.path.join(self.data_dir,pat_idx+'_'+mod+ '.npy'))
+                clinical = None
+            if len(self.edge_dict[pat]) == 0:
+                if self.config['with_edge_attr']:
+                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), edge_attr=torch.tensor([[0.]]), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical)
+                else:
+                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical)
+            else:
+                edges = torch.tensor([[edge_idx_map[gtv], edge_idx_map[gtv2]] for gtv, gtv2 in self.edge_dict[pat]], dtype=torch.int64)
+                data = Data(x=graph_array, edge_index=edges.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical)
 
-            # take the whole tumor image, since each channel will be a separate modality
-            mod_arr[imod] = in_arr[3]
 
-        if self.to_augment: 
-            aug = pat_idx.split('_')[-1]
-            if aug in self.augment_types:
-                if 'flip' in aug:
-                    mod_arr = self.apply_flip(mod_arr)
-                if 'rotate' in aug:
-                    mod_arr = self.apply_rotation(mod_arr)
-                if 'noise' in aug:
-                    mod_arr = self.apply_noise(mod_arr)
-                if 'deform' in aug:
-                    mod_arr = self.apply_deformation(mod_arr)
+            if self.config['with_edge_attr'] and len(self.edge_dict[pat]) != 0:
+                sph_transform = T.Spherical()
+                norm_transform = T.Cartesian()
+                dist_transform = T.Distance()
+                #data = sph_transform(data) 
+                data = dist_transform(data) 
+                #data = norm_transform(data) 
+            
 
-        return mod_arr
+            torch.save(data, self.processed_dir.joinpath(f"graph_{idx}.pt"))
+        
 
+    def len(self):
+        return len(self.patients)
+
+
+    def get(self, idx):
+        data = torch.load(self.processed_dir.joinpath(f"graph_{idx}.pt"))
+        return data
 
 
     def apply_noise(self, arr):
         return random_noise(arr, mode='gaussian', seed=self.rng_noise)
 
 
-    def apply_rotation(self, arr):
-        angle = self.rng_rotate.integers(-180, high=180)
-        if self.n_channels==1:
-            arr = rotate(arr, angle, preserve_range=True)
-        elif self.n_channels > 1:
-            for i in range(self.n_channels):
-                 arr[i,:,:,:] = rotate(arr[i,:,:,:], angle, preserve_range=True)
+    def apply_rotation(self, arr, angle):
+        arr = rotate(arr, angle, preserve_range=True)
         return arr
 
 
-    def apply_deformation(self, arr):
-        if self.n_channels==1:
-            arr = elasticdeform.deform_random_grid(arr, sigma=5, order=0, axis=(0,1,2))
-        else:
-            arr = elasticdeform.deform_random_grid(arr, sigma=5, order=0, axis=(1,2,3))
+    def apply_deformation(self, arr, struct):
+        arr = elasticdeform.deform_random_grid([arr, struct], sigma=5, order=3, axis=[(0,1,2), (0,1,2)])
         return arr
 
 
     def apply_flip(self, arr):
-        if self.n_channels==1:
-            arr = np.flip(arr, axis=(0,1,2)).copy()
-        else:
-            arr = np.flip(arr, axis=(1,2,3)).copy()
-        return arr
-
-
-    def encode(self, arr, idx):
-        arr.append(np.zeros((self.n_channels, self.dim[1], self.dim[2])), axis=0)
-
-        ed_arr = self.radiomics.loc[idx].iloc[:, self.radiomics.columns.str.contains('_ED_', regex=False)] 
-        et_arr = self.radiomics.loc[idx].iloc[:, self.radiomics.columns.str.contains('_ET_', regex=False)] 
-        nc_arr = self.radiomics.loc[idx].iloc[:, self.radiomics.columns.str.contains('_NC_', regex=False)] 
-
-        ed_arr = ed_arr.reshape((15,9))
-        et_arr = et_arr.reshape((15,9))
-        nc_arr = nc_arr.reshape((15,9))
-
-        arr[0, -1, (43-7):(41+8), (41-4):(41+5)] = ed_arr
-        arr[1, -1, (43-7):(41+8), (41-4):(41+5)] = et_arr
-        arr[2, -1, (43-7):(41+8), (41-4):(41+5)] = nc_arr
-
+        arr = np.flip(arr, axis=(0,1,2)).copy()
         return arr

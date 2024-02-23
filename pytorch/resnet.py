@@ -97,29 +97,26 @@ class ResNet(nn.Module):
         self.pool = nn.MaxPool3d(kernel_size=(3,3,3), stride=2, dilation=1, padding=1)
 
         self.in_channels = 64
-        #self.strides = [1, 2, 2, 2]
-        self.strides = [1, 2, 1, 1]
-        self.dilations = [1, 1, 2, 4]
+        self.strides = [1, 2, 2, 2]
+        self.dilations = [1, 1, 1, 1]
+        #self.strides = [1, 2, 1, 1]
+        #self.dilations = [1, 1, 2, 4]
         self.channels = [64, 128, 256, 512]
         #self.nblocks = [3, 4, 6, 3] -> layers
         self.layers = layers
 
         self.blocks = []
-        self.parallel_blocks = []
 
         for idx, (ch, n_blocks, stride, dilation) in enumerate(zip(self.channels, self.layers, self.strides, self.dilations)):
             blocks = self._make_layer(block, ch, n_blocks, stride=stride, dilation=dilation)
             self.blocks.append(nn.ModuleList(blocks))
         self.blocks = nn.ModuleList(self.blocks)
     
-        self.in_channels = 64
-        for idx, (ch, n_blocks, stride, dilation) in enumerate(zip(self.channels, self.layers, self.strides, self.dilations)):
-            blocks = self._make_layer(block, ch, n_blocks, stride=stride, dilation=dilation)
-            self.parallel_blocks.append(nn.ModuleList(blocks))
-        self.parallel_blocks = nn.ModuleList(self.parallel_blocks)
-
         self.avgpool = nn.AdaptiveAvgPool3d((1,1,1))
-        self.classify = nn.Linear(self.channels[-1]*self.expansion, num_classes)
+        self.linear1 = nn.Linear(self.channels[-1]*self.expansion, 1024)
+        self.linear2 = nn.Linear(1024, 512)
+        self.linear3 = nn.Linear(512, 64)
+
         self.dropout = nn.Dropout(dropout)
 
         for m in self.modules():
@@ -153,125 +150,22 @@ class ResNet(nn.Module):
         x = self.pool(x)
 
 
-        if policy is not None:
-            for segment, n_blocks in enumerate(self.layers):
-                for b in range(n_blocks):
-                    action = policy[:,t].contiguous()
-                    action_mask = action.float().view(-1,1,1,1,1)
-
-                    output = self.blocks[segment][b](x)
-                    output_ = self.parallel_blocks[segment][b](x)
-
-                    f1 = output
-                    f2 = output_
-                    x = f1*(1-action_mask) + f2*action_mask
-                    x = self.dropout(x)
-                    t += 1
-
-        else:
-            for segment, n_blocks in enumerate(self.layers):
-                for b in range(n_blocks):
-                    output = self.blocks[segment][b](x)
-                    x = output
-                    x = self.dropout(x)
-                    t += 1
+        for segment, n_blocks in enumerate(self.layers):
+            for b in range(n_blocks):
+                output = self.blocks[segment][b](x)
+                x = output
+                x = self.dropout(x)
+                t += 1
 
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
-        x = self.classify(x)
+        x = self.linear1(x)
+        x = self.linear2(x)
+        x = self.linear3(x)
 
         return x
 
 
-class Agent(nn.Module):
-    def __init__(self, block, layers, in_channels=3, num_classes=1, dropout=0.0):
-        super(Agent, self).__init__()
-        self.expansion = 1
-        self.factor = 1
-        self.conv1 = nn.Conv3d(in_channels, 64, kernel_size=(7,7,7), stride=2, padding=3, bias=False)
-        self.bn1 = nn.BatchNorm3d(64)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool3d(kernel_size=(3,3,3), stride=2, dilation=1, padding=1)
-
-        self.in_channels = 64
-        #self.strides = [1, 2, 2, 2]
-        self.strides = [1, 2, 1, 1]
-        self.dilations = [1, 1, 2, 4]
-        self.channels = [64, 128, 256, 512]
-        #self.nblocks = [3, 4, 6, 3] -> layers
-        self.layers = layers
-
-        self.blocks = []
-        self.parallel_blocks = []
-
-        for idx, (ch, n_blocks, stride, dilation) in enumerate(zip(self.channels, self.layers, self.strides, self.dilations)):
-            blocks = self._make_layer(block, ch, n_blocks, stride=stride, dilation=dilation)
-            self.blocks.append(nn.ModuleList(blocks))
-        self.blocks = nn.ModuleList(self.blocks)
-    
-        self.avgpool = nn.AdaptiveAvgPool3d((1,1,1))
-        self.classify = nn.Linear(self.channels[-1]*self.expansion, num_classes)
-        self.dropout = nn.Dropout(dropout)
-
-        for m in self.modules():
-            if isinstance(m, nn.Conv3d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2./n))
-            elif isinstance(m, nn.BatchNorm3d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
-
-    def _make_layer(self, block, channels, n_blocks, stride=1, dilation=1):
-
-        layers = []
-        layers.append(block(self.in_channels, channels, stride=stride, dilation=dilation))
-        self.in_channels = channels * block.expansion
-        for i in range(1, n_blocks):
-            layers.append(block(self.in_channels, channels))
-
-        return layers
-
-
-
-    def forward(self, x, policy=None):
-        t = 0
-
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-
-
-        if policy is not None:
-            for segment, n_blocks in enumerate(self.layers):
-                for b in range(n_blocks):
-                    output = self.blocks[segment][b](x)
-                    x = output
-                    x = self.dropout(x)
-                    t += 1
-
-        else:
-            for segment, n_blocks in enumerate(self.layers):
-                for b in range(n_blocks):
-                    output = self.blocks[segment][b](x)
-                    x = output
-                    x = self.dropout(x)
-                    t += 1
-
-        x = self.avgpool(x)
-        x = torch.flatten(x, 1)
-        x = self.classify(x)
-
-        return x
-
-
-def resnet_spottune(num_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
+def resnet50(num_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
     return ResNet(blocks, [3,4,6,3], in_channels=in_channels, num_classes=num_classes, dropout=dropout)
-
-
-def resnet_agent(num_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock):
-    return Agent(blocks, [1,1,1,1], in_channels=in_channels, num_classes=num_classes, dropout=dropout)
-
-
-
 
