@@ -21,7 +21,7 @@ from torch.utils.tensorboard import SummaryWriter
 import torchvision
 import torchmetrics
 
-from hnc_project.pytorch.dataset_class import DatasetGeneratorRadiomics, DatasetGeneratorImage
+from hnc_project.pytorch.dataset_class import DatasetGeneratorRadiomics, DatasetGeneratorImage, DatasetGeneratorBoth
 from hnc_project.pytorch.simple_gcn import SimpleGCN
 from hnc_project.pytorch.gated_gcn import GatedGCN, ClinicalGatedGCN
 from hnc_project.pytorch.deep_gcn import DeepGCN
@@ -63,6 +63,13 @@ class RunModel(object):
         else:
             self.clinical_mean = None
             self.clinical_std = None
+
+        if self.config['radiomics_mean'] is not None:
+            self.radiomics_mean = torch.load(self.config['radiomics_mean']).to(self.device)
+            self.radiomics_std = torch.load(self.config['radiomics_std']).to(self.device)
+        else:
+            self.radiomics_mean = None
+            self.radiomics_std = None
  
         if self.n_classes == 1:
             self.loss_fn = nn.BCEWithLogitsLoss().to(self.device)
@@ -97,6 +104,15 @@ class RunModel(object):
         self.feature_extractor = None
 
 
+    def reset_metrics(self):
+        self.best_auc =0.
+        self.best_ap =0.
+        self.best_M =0.
+        self.best_loss = 5.0
+        self.best_sum = 0.
+        self.best_model = None
+    
+
     def set_model(self):
         """
         sets and assigns GNN model to self.model
@@ -109,7 +125,13 @@ class RunModel(object):
             self.model = SimpleGCN(self.data.num_node_features, 64, self.n_classes, self.config['dropout']).to(self.device)
             print(f"{self.model_name} set")
         elif self.model_name == 'ClinicalGatedGCN':
-            self.model = ClinicalGatedGCN(self.feature_extractor.linear3.out_features, 64, self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
+            if self.config['data_type'] == 'image':
+                self.model = ClinicalGatedGCN(self.feature_extractor.linear3.out_features, 64, self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
+            elif self.config['data_type'] == 'both':
+                in_channels = len(self.data[0].radiomics[0]) + self.feature_extractor.linear3.out_features
+                self.model = ClinicalGatedGCN(in_channels, 64, self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
+            else:
+                self.model = ClinicalGatedGCN(self.data.num_node_features, 64, self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
         elif self.model_name == 'GatedGCN':
             self.model = GatedGCN(self.data.num_node_features, 64, self.n_classes, self.edge_dim, self.config['dropout']).to(self.device) 
@@ -240,15 +262,17 @@ class RunModel(object):
 
     def set_data(self, patch_dir='../../data/HNSCC/HNSCC_Nii_222_50_50_60_Crop_v2', radiomics_dir='../../data/HNSCC/radiomics', edge_file='../../data/HNSCC/edge_staging/edges_122823.pkl', locations_file='../../data/HNSCC/edge_staging/centered_locations_010424.pkl', clinical_data='../../data/HNSCC/clinical_features.pkl', version='v1', pre_transform=None):
         if self.data_type == 'radiomics':
-            self.data = DatasetGeneratorRadiomics(patch_dir, radiomics_dir, edge_file, locations_file, version, pre_transform=None, config=self.config)
+            self.data = DatasetGeneratorRadiomics(patch_dir, radiomics_dir, edge_file, locations_file, clinical_data, version, pre_transform=None, config=self.config)
         elif self.data_type == 'image':
             self.data = DatasetGeneratorImage(patch_dir, edge_file, locations_file, clinical_data, version, pre_transform=self.scaling_type, config=self.config)
+        elif self.data_type == 'both':
+            self.data = DatasetGeneratorBoth(patch_dir, radiomics_dir, edge_file, locations_file, clinical_data, version, pre_transform=self.scaling_type, config=self.config)
 
 
     def set_scaled_data(self, patch_dir='../../data/HNSCC/HNSCC_Nii_222_50_50_60_Crop_v2', radiomics_dir='../../data/HNSCC/radiomics', edge_file='../../data/HNSCC/edge_staging/edges_122823.pkl', locations_file='../../data/HNSCC/edge_staging/centered_locations_010424.pkl', version='v1'):
         if self.data_type == 'radiomics':
             self.get_std_norm()
-            self.data = DatasetGeneratorRadiomics(patch_dir, radiomics_dir, edge_file, locations_file, version, pre_transform=self.transform, with_edge_attr=self.with_edge_attr)
+            self.data = DatasetGeneratorRadiomics(patch_dir, radiomics_dir, edge_file, locations_file, version, pre_transform=self.transform, config=self.config)
         
 
 
@@ -306,37 +330,33 @@ class RunModel(object):
 
     def get_std_norm(self):
 
-        if self.config['use_clinical'] and self.clinical_mean is not None:
+        if self.config['use_clinical'] and self.clinical_mean is None:
             scale_features = None
             self.clinical_mean = []
             self.clinical_std = []
             for idx in self.train_splits:
                 for i, feat in enumerate(self.data[idx]):
                     if i == 0:
-                        scale_features = feat.clinical[[0, 1]].unsqueeze(0)
+                        scale_features = feat.clinical[0][[0, 1]].unsqueeze(0)
                         continue
                     scale_features = torch.cat((scale_features, feat.clinical[[0, 1]].unsqueeze(0)), 0)
                 
                 self.clinical_mean.append(scale_features.mean(0))
                 self.clinical_std.append(scale_features.std(0))
 
-        if self.data_type == 'radiomics':
-            if len(self.data[0].x.shape) > 2:
-                self.mean_features = None
-                self.std_features = None
-                self.transform = None
-            else:
-                node_features = None
-                for i, feat in enumerate(self.data[self.idx_train]):
+        if self.data_type == 'both' and self.radiomics_mean is None:
+            self.radiomics_mean = []
+            self.radiomics_std = []
+            node_features = None
+            for idx in self.train_splits:
+                for i, feat in enumerate(self.data[idx]):
                     if i == 0:
-                        node_features = feat.x
+                        node_features = feat.radiomics
                         continue
-                    node_features = torch.cat((node_features, feat.x), 0)
+                    node_features = torch.cat((node_features, feat.radiomics), 0)
 
-                self.transform = StandardScaler()
-                self.transform.fit(node_features)
-                self.config['mean_features'] = node_features.mean(0)
-                self.config['std_features'] = node_features.std(0)
+                self.radiomics_mean.append(node_features.mean(0))
+                self.radiomics_std.append(node_features.std(0))
 
       
 
@@ -416,17 +436,33 @@ class RunModel(object):
             else:
                 x = batch.x
             #Compute prediction error
-            if batch.edge_attr is not None:
+            if self.data_type in ['both', 'radiomics']:
+                batch.radiomics = batch.radiomics.to(self.device, dtype=torch.float)
+                batch.radiomics = (batch.radiomics - self.radiomics_mean[cross_idx]) / self.radiomics_mean[cross_idx]
+
+            if self.with_edge_attr:
 
                 if self.config['use_clinical']:
                     batch.clinical = batch.clinical.to(self.device, dtype=torch.float)
                     batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[cross_idx][0]) / self.clinical_mean[cross_idx][0]
                     batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[cross_idx][1]) / self.clinical_mean[cross_idx][1]
-                    pred = self.model(x=x, edge_index=batch.edge_index, edge_attr=batch.edge_attr, batch=batch.batch, clinical=batch.clinical)
+                    if self.data_type == 'both':
+                        pred = self.model(x=x, edge_index=batch.edge_index, edge_attr=batch.edge_attr, batch=batch.batch, clinical=batch.clinical, radiomics=batch.radiomics)
+                    else:
+                        pred = self.model(x=x, edge_index=batch.edge_index, edge_attr=batch.edge_attr, batch=batch.batch, clinical=batch.clinical)
                 else:
                     pred = self.model(x=x, edge_index=batch.edge_index, edge_attr=batch.edge_attr, batch=batch.batch)
             else:
-                pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch)
+                if self.config['use_clinical']:
+                    batch.clinical = batch.clinical.to(self.device, dtype=torch.float)
+                    batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[cross_idx][0]) / self.clinical_mean[cross_idx][0]
+                    batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[cross_idx][1]) / self.clinical_mean[cross_idx][1]
+                    if self.data_type == 'both':
+                        pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical, radiomics=batch.radiomics)
+                    else:
+                        pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical)
+                else:
+                    pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch)
             loss = self.loss_fn(pred, batch.y)
             total_loss += loss 
            
@@ -521,16 +557,31 @@ class RunModel(object):
                 else:
                     x = batch.x
 
-                if batch.edge_attr is not None:
+                if self.data_type in ['both', 'radiomics']:
+                    batch.radiomics = batch.radiomics.to(self.device, dtype=torch.float)
+                    batch.radiomics = (batch.radiomics - self.radiomics_mean[cross_idx]) / self.radiomics_mean[cross_idx]
+                if self.with_edge_attr:
                     if self.config['use_clinical']:
                         batch.clinical = batch.clinical.to(self.device, dtype=torch.float)
                         batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[cross_idx][0]) / self.clinical_mean[cross_idx][0]
                         batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[cross_idx][1]) / self.clinical_mean[cross_idx][1]
-                        pred = self.model(x=x, edge_index=batch.edge_index, edge_attr=batch.edge_attr, batch=batch.batch, clinical=batch.clinical)
+                        if self.data_type == 'both':
+                            pred = self.model(x=x, edge_index=batch.edge_index, edge_attr=batch.edge_attr, batch=batch.batch, clinical=batch.clinical, radiomics=batch.radiomics)
+                        else:
+                            pred = self.model(x=x, edge_index=batch.edge_index, edge_attr=batch.edge_attr, batch=batch.batch, clinical=batch.clinical)
                     else:
                         pred = self.model(x=x, edge_index=batch.edge_index, edge_attr=batch.edge_attr, batch=batch.batch)
                 else:
-                    pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch)
+                    if self.config['use_clinical']:
+                        batch.clinical = batch.clinical.to(self.device, dtype=torch.float)
+                        batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[cross_idx][0]) / self.clinical_mean[cross_idx][0]
+                        batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[cross_idx][1]) / self.clinical_mean[cross_idx][1]
+                        if self.data_type == 'both':
+                            pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical, radiomics=batch.radiomics)
+                        else:
+                            pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical)
+                    else:
+                        pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch)
 
                 test_loss += self.loss_fn(pred, batch.y)
                 total_pred.extend(pred)
@@ -587,7 +638,7 @@ class RunModel(object):
                 out_path = os.path.join(self.log_dir, f"best_model_{self.epoch}_{test_loss:0.2f}_{metric_M:>0.2f}_{iauc:>0.2f}.pth")
                 self.best_model = {
                     'model_state_dict': copy.deepcopy(self.model.state_dict()),
-                    'extractor_state_dict': self.feature_extractor.state_dict(),
+                    'extractor_state_dict': copy.deepcopy(self.feature_extractor.state_dict()),
                     'optimizer_state_dict': copy.deepcopy(self.optimizer.state_dict()),
                     'config' : self.config,
                     'epoch': self.epoch,
@@ -620,8 +671,9 @@ class RunModel(object):
             self.fold_targets[k] = []
 
         for fold_idx in range(5):
-            if self.feature_extractor is not None:
+            if self.feature_extractor is not None and self.data_type!='radiomics':
                 self.set_feature_extractor(transfer=self.config['transfer'])
+            self.reset_metrics()
             self.set_model()
             self.set_loss_fn(cross_idx=fold_idx)
             results = self.run(cross_idx=fold_idx)
@@ -701,19 +753,19 @@ class RunModel(object):
         if self.best_model is None:
             if self.cross_val:
                 if self.feature_extractor is not None:
-                    torch.save({'model_state_dict': self.model.state_dict(),
-                                'extractor_state_dict': self.feature_extractor.state_dict(),
+                    torch.save({'model_state_dict': copy.deepcopy(self.model.state_dict()),
+                                'extractor_state_dict': copy.deepcopy(self.feature_extractor.state_dict()),
                                 'optimizer_state_dict': copy.deepcopy(self.optimizer.state_dict()),
                                 'config'    : self.config, 
                                 'model_name': self.model.__class__.__name__}, os.path.join(self.log_dir, "last_model_{cross_idx}.pth"))
                 else:
-                    torch.save({'model_state_dict': self.model.state_dict(),
+                    torch.save({'model_state_dict': copy.deepcopy(self.model.state_dict()),
                                 'optimizer_state_dict': copy.deepcopy(self.optimizer.state_dict()),
                                 'config'    : self.config, 
                                 'model_name': self.model.__class__.__name__}, os.path.join(self.log_dir, "last_model_{cross_idx}.pth"))
             else:
-                torch.save({'model_state_dict': self.model.state_dict(),
-                            'extractor_state_dict': self.feature_extractor.state_dict(),
+                torch.save({'model_state_dict': copy.deepcopy(self.model.state_dict()),
+                            'extractor_state_dict': copy.deepcopy(self.feature_extractor.state_dict()),
                             'optimizer_state_dict': copy.deepcopy(self.optimizer.state_dict()),
                             'config'    : self.config, 
                             'model_name': self.model.__class__.__name__}, os.path.join(self.log_dir, 'last_model.pth'))

@@ -47,7 +47,7 @@ class GatedGCN(nn.Module):
 
 
 class ClinicalGatedGCN(nn.Module):
-    def __init__(self, in_channels, hidden_channels, num_classes, num_clinical, edge_dim=3, dropout=0.5):
+    def __init__(self, in_channels, hidden_channels, num_classes, num_clinical, edge_dim=1, dropout=0.5):
         super(ClinicalGatedGCN, self).__init__()
 
         self.conv1 = ResGatedGraphConv(in_channels, hidden_channels, edge_dim=edge_dim)
@@ -61,7 +61,8 @@ class ClinicalGatedGCN(nn.Module):
         self.norm3 = BatchNorm(in_channels=hidden_channels, allow_single_element=True)
         self.dropout = Dropout(dropout)
 
-    def forward(self, x, edge_index, edge_attr, batch, clinical):
+    def forward(self, x, edge_index, edge_attr, batch, clinical, radiomics):
+        x = torch.cat((x,radiomics), 1)
         x = self.conv1(x=x, edge_index=edge_index, edge_attr=edge_attr)
         x = self.relu(x)
         x = self.norm1(x)
@@ -75,7 +76,7 @@ class ClinicalGatedGCN(nn.Module):
         x = self.norm3(x)
         x = self.dropout(x)
        
-        x = global_mean_pool(x, batch, size=batch.unique().nelement())
+        x = global_mean_pool(x, batch)
 
         x = torch.cat((x, clinical), 1)
         x = self.dropout(x)

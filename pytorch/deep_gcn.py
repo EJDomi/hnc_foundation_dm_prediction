@@ -11,14 +11,14 @@ class DeepGCN(nn.Module):
 
         self.layers = nn.ModuleList()
 
-        conv = GENConv(in_channels, hidden_channels, aggr='softmax', t=0.1, learn_t=True, num_layers=2, norm='Batch', edge_dim=edge_dim)
+        conv = GENConv(in_channels, hidden_channels, aggr='softmax', t=0.1, learn_t=True, num_layers=2, norm='batch', edge_dim=edge_dim)
         norm = BatchNorm(hidden_channels)
         act = ReLU(inplace=True)
         layer = DeepGCNLayer(conv, norm, act, block='res+', dropout=dropout)
         self.layers.append(layer)
 
         for i in range(1, num_layers): 
-            conv = GENConv(hidden_channels, hidden_channels, aggr='softmax', t=0.1, learn_t=True, num_layers=2, norm='Batch', edge_dim=edge_dim)
+            conv = GENConv(hidden_channels, hidden_channels, aggr='softmax', t=0.1, learn_t=True, num_layers=2, norm='batch', edge_dim=edge_dim)
             norm = BatchNorm(hidden_channels)
             act = ReLU(inplace=True)
             layer = DeepGCNLayer(conv, norm, act, block='res+', dropout=dropout)

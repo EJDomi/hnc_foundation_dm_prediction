@@ -40,5 +40,8 @@ model_config = {
                                         [9.3560, 2.1930]]
                                 },
                "num_deep_layers": 28,
+               "positive_increase": 5,
+               "radiomics_mean": '../../data/HNSCC/radiomics_mean.pt',
+               "radiomics_std": '../../data/HNSCC/radiomics_std.pt',
                }         
 
