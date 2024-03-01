@@ -132,7 +132,7 @@ class DatasetGeneratorImage(Dataset):
         self.edge_dict = pd.read_pickle(edge_file)
         self.locations = pd.read_pickle(locations_file)
         self.pdir = self.data_path.joinpath(f"graph_staging/{self.patch_path.name}_{edge_file.split('/')[-1].replace('.pkl', '')}_{version}")
-        self.patients = [pat.as_posix().split('/')[-1] for pat in self.patch_path.glob('*/')]
+        self.patients = [pat.as_posix().split('/')[-1] for pat in self.patch_path.glob('*/') if '.pkl' not in str(pat)]
         self.years = 2
 
         self.rng_noise = np.random.default_rng(42)
@@ -203,15 +203,15 @@ class DatasetGeneratorImage(Dataset):
 
     @property
     def raw_paths(self):
-        return [self.raw_dir.joinpath(pat) for pat in self.patients]
+        return [f"{self.raw_dir}/{pat}" for pat in self.patients]
 
     @property
     def raw_dir(self):
-        return self.patch_path
+        return str(self.patch_path)
 
     @property
     def processed_dir(self):
-        return self.pdir 
+        return str(self.pdir)
 
     @property
     def processed_file_names(self):
@@ -316,7 +316,7 @@ class DatasetGeneratorImage(Dataset):
                 #data = norm_transform(data) 
             
 
-            torch.save(data, self.processed_dir.joinpath(f"graph_{idx}.pt"))
+            torch.save(data, f"{self.processed_dir}/graph_{idx}.pt")
         
 
     def len(self):
@@ -324,7 +324,7 @@ class DatasetGeneratorImage(Dataset):
 
 
     def get(self, idx):
-        data = torch.load(self.processed_dir.joinpath(f"graph_{idx}.pt"))
+        data = torch.load(f"{self.processed_dir}/graph_{idx}.pt")
         return data
 
 
