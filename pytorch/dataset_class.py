@@ -159,8 +159,8 @@ class DatasetGeneratorImage(Dataset):
                     self.y = pd.concat([self.y, aug_rot_pats])
                 if self.config['positive_increase'] > 0:
                     for rot in range(self.config['positive_increase']):
-                        aug_rot_pats = aug_pats.copy(deep=True)
-                        aug_rot_pats.index = aug_pats.index + f"_rotation_pos_{rot}"
+                        aug_rot_pats = aug_pos_pats.copy(deep=True)
+                        aug_rot_pats.index = aug_pos_pats.index + f"_rotation_pos_{rot}"
                         self.patients.extend(aug_rot_pats.index)
                         self.y = pd.concat([self.y, aug_rot_pats])
                     
@@ -304,6 +304,8 @@ class DatasetGeneratorImage(Dataset):
                     data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical)
             else:
                 edges = torch.tensor([[edge_idx_map[gtv], edge_idx_map[gtv2]] for gtv, gtv2 in self.edge_dict[pat]], dtype=torch.int64)
+                edges_op = torch.tensor([[edge_idx_map[gtv2], edge_idx_map[gtv]] for gtv, gtv2 in self.edge_dict[pat]], dtype=torch.int64)
+                edges = torch.cat((edges, edges_op), 0)
                 data = Data(x=graph_array, edge_index=edges.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical)
 
 
@@ -376,7 +378,7 @@ class DatasetGeneratorBoth(Dataset):
         self.y = y['has_dm'] & (y['survival_dm'] < self.years)
 
         if self.config['augment']:
-            #aug_pos_pats = self.y[self.y==1]
+            aug_pos_pats = self.y[self.y==1]
             aug_pats = self.y
             if 'rotation' in self.config['augments']:
                 for rot in range(self.config['n_rotations']):
@@ -385,6 +387,12 @@ class DatasetGeneratorBoth(Dataset):
                     self.patients.extend(aug_rot_pats.index)
                     
                     self.y = pd.concat([self.y, aug_rot_pats])
+                if self.config['positive_increase'] > 0:
+                    for rot in range(self.config['positive_increase']):
+                        aug_rot_pats = aug_pos_pats.copy(deep=True)
+                        aug_rot_pats.index = aug_pos_pats.index + f"_rotation_pos_{rot}"
+                        self.patients.extend(aug_rot_pats.index)
+                        self.y = pd.concat([self.y, aug_rot_pats])
 
                 #aug_rot_pats = aug_pats.copy(deep=True)
                 #aug_rot_pats.index = aug_pats.index + f"_rotation_0"
@@ -405,6 +413,12 @@ class DatasetGeneratorBoth(Dataset):
                     aug_deform_pats.index = aug_pats.index + f"_deform_{dfm}"
                     self.patients.extend(aug_deform_pats.index)
                     self.y = pd.concat([self.y, aug_deform_pats])
+                if self.config['positive_increase'] > 0:
+                    for dfm in range(self.config['positive_increase']):
+                        aug_deform_pats = aug_pos_pats.copy(deep=True)
+                        aug_deform_pats.index = aug_pos_pats.index + f"_deformation_pos_{dfm}"
+                        self.patients.extend(aug_deform_pats.index)
+                        self.y = pd.concat([self.y, aug_deform_pats])
                  
             if 'flip' in self.config['augments']:
                 aug_flip_pats = aug_pats.copy(deep=True)
@@ -526,6 +540,8 @@ class DatasetGeneratorBoth(Dataset):
                     data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, radiomics=rad_array)
             else:
                 edges = torch.tensor([[edge_idx_map[gtv], edge_idx_map[gtv2]] for gtv, gtv2 in self.edge_dict[pat]], dtype=torch.int64)
+                edges_op = torch.tensor([[edge_idx_map[gtv2], edge_idx_map[gtv]] for gtv, gtv2 in self.edge_dict[pat]], dtype=torch.int64)
+                edges = torch.cat((edges, edges_op), 0)
                 data = Data(x=graph_array, edge_index=edges.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, radiomics=rad_array)
 
 

@@ -24,7 +24,7 @@ import torchmetrics
 from hnc_project.pytorch.dataset_class import DatasetGeneratorRadiomics, DatasetGeneratorImage, DatasetGeneratorBoth
 from hnc_project.pytorch.simple_gcn import SimpleGCN
 from hnc_project.pytorch.gated_gcn import GatedGCN, ClinicalGatedGCN
-from hnc_project.pytorch.deep_gcn import DeepGCN
+from hnc_project.pytorch.deep_gcn import DeepGCN, AltDeepGCN
 from hnc_project.pytorch.graphu_gcn import myGraphUNet
 from hnc_project.pytorch.resnet import resnet50
 from hnc_project.pytorch.transfer_layer_translation_cfg import layer_loop, layer_loop_downsample
@@ -146,6 +146,10 @@ class RunModel(object):
             print(f"{self.model_name} set")
         elif self.model_name == 'DeepGCN':
             self.model = DeepGCN(self.feature_extractor.linear3.out_features, 64, self.config['num_deep_layers'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
+            print(f"{self.model_name} set")
+        elif self.model_name == 'AltDeepGCN':
+            in_channels = len(self.data[0].radiomics[0]) + self.feature_extractor.linear3.out_features
+            self.model = AltDeepGCN(in_channels, 64, self.config['num_deep_layers'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
           
         else:
@@ -302,6 +306,17 @@ class RunModel(object):
             self.val_folds = [3, 2, 1, 0, 4]
             self.test_folds = [4, 3, 2, 1, 0]
 
+            self.nested_train_folds = [[[0,1,2],[1,2,3],[2,3,0],[3,0,1]],
+                                       [[4,0,1],[0,1,2],[1,2,4],[2,4,0]],
+                                       [[3,4,0],[4,0,1],[0,1,3],[1,3,4]],
+                                       [[2,3,4],[3,4,0],[4,0,2],[0,2,3]],
+                                       [[1,2,3],[2,3,4],[3,4,1],[4,1,2]]]
+            self.nested_val_folds = [[3,0,1,2],
+                                     [2,4,0,1],
+                                     [1,3,4,0],
+                                     [0,2,3,4],
+                                     [4,2,3,4]]
+
             self.train_splits = [self.folds[i]+self.folds[j]+self.folds[k] for i,j,k in self.train_folds]
 
             self.aug_splits = []
@@ -321,6 +336,27 @@ class RunModel(object):
             self.class_weights = []
             for split in self.train_splits:
                 self.class_weights.append([len(self.data.y.values[split][self.data.y.values[split]==0]) / np.sum(self.data.y.values[split])])
+
+            
+            self.nested_train_splits = [[self.folds[i]+self.folds[j]+self.folds[k] for i,j,k in nest] for nest in self.nested_train_folds]
+            self.nested_val_splits = [[self.folds[i] for i in nest] for nest in self.nested_val_folds] 
+            self.nested_aug_splits = []
+            if len(augments) > 0:
+                aug_pats = y_aug.index
+                for split in self.nested_train_splits:
+                    aug_split = []
+                    for nest in split:
+                        aug_nest = []
+                        nest_pats = y.index[nest]
+                        for pat in aug_pats:
+                            if pat.split('_')[0] in nest_pats:
+                                aug_nest.append(pat)
+                        aug_split.append(aug_nest)
+                    self.nested_aug_splits.append(aug_split)
+
+                for idx in range(len(self.nested_train_splits)):
+                    for jdx in range(len(self.nested_train_splits[idx])):
+                        self.nested_train_splits[idx][jdx].extend([self.data.y.index.get_loc(pat) for pat in self.nested_aug_splits[idx][jdx]])   
             
         else:
             idx_train, self.idx_test, y_train, y_test = train_test_split(list(range(self.data.len())), self.data.y.values, test_size=0.2, random_state=42, stratify=self.data.y.values) 
@@ -398,10 +434,13 @@ class RunModel(object):
                 self.loss_fn = nn.CrossEntropyLoss().to(pos_weight=torch.tensor(self.class_weights)).to(self.device)
         
  
-    def train(self, data_to_use='train', cross_idx=None):
+    def train(self, data_to_use='train', cross_idx=None, nest_idx=None):
         if data_to_use == 'val':
             if cross_idx is not None:
-                dataloader = self.val_cross_dataloaders[cross_idx]
+                if nest_idx is not None:
+                    dataloader = self.val_nested_dataloaders[cross_idx][nest_idx]
+                else:
+                    dataloader = self.val_cross_dataloaders[cross_idx]
             else:
                 dataloader = self.val_dataloader
         elif data_to_use == 'test':
@@ -411,7 +450,10 @@ class RunModel(object):
                 dataloader = self.test_dataloader
         elif data_to_use == 'train':
             if cross_idx is not None:
-                dataloader = self.train_cross_dataloaders[cross_idx]
+                if nest_idx is not None:
+                    dataloader = self.train_nested_dataloaders[cross_idx][nest_idx]
+                else:
+                    dataloader = self.train_cross_dataloaders[cross_idx]
             else:
                 dataloader = self.train_dataloader
 
@@ -633,6 +675,7 @@ class RunModel(object):
         if data_to_use == 'val':
             #if iap > self.best_ap and self.epoch > 40:
             if test_loss < self.best_loss and self.epoch > 40:
+                print(f"#################new best model saved###############")
                 #self.best_ap = iap
                 self.best_loss = test_loss
                 out_path = os.path.join(self.log_dir, f"best_model_{self.epoch}_{test_loss:0.2f}_{metric_M:>0.2f}_{iauc:>0.2f}.pth")
@@ -720,6 +763,71 @@ class RunModel(object):
         
         return metric_results, metric_results.mean(axis=0), overall_test_metrics, overall_val_metrics
             
+
+
+    def run_nested_crossval(self):
+        if not self.cross_val:
+            raise ValueError('cross_val needs to be set to True to run')
+        self.fold_metrics = []
+        self.fold_probs = {}
+        self.fold_targets = {}
+        self.fold_probs = {}
+        self.fold_targets = {}
+        keys = ['train', 'val', 'test']
+        for k in keys:
+            self.fold_probs[k] = []
+            self.fold_targets[k] = []
+
+        for fold_idx in range(5):
+            for nest_idx in range(4):
+                if self.feature_extractor is not None and self.data_type!='radiomics':
+                    self.set_feature_extractor(transfer=self.config['transfer'])
+                self.reset_metrics()
+                self.set_model()
+                self.set_loss_fn(cross_idx=fold_idx)
+                results = self.run(cross_idx=fold_idx)
+                self.fold_metrics.append(results[0])
+                self.fold_probs['train'][fold_idx].append(results[1][0][0])
+                self.fold_targets['train'][fold_idx].append(results[1][0][1])
+                self.fold_probs['val'][fold_idx].extend(results[1][1][0])
+                self.fold_targets['val'][fold_idx].extend(results[1][1][1])
+                self.fold_probs['test'][fold_idx].extend(results[1][2][0])
+                self.fold_targets['test'][fold_idx].extend(results[1][2][1])
+
+    
+        metric_results = np.array(self.fold_metrics)
+
+        for k in self.fold_probs.keys():
+            if 'train' in k: continue
+            self.fold_probs[k] = torch.tensor(np.array(self.fold_probs[k]))
+            self.fold_targets[k] = torch.tensor(np.array(self.fold_targets[k]), dtype=torch.long)
+
+        overall_test_metrics = [
+                                self.acc_fn(self.fold_probs['test'], self.fold_targets['test']),
+                                self.ap_fn(self.fold_probs['test'], self.fold_targets['test']),
+                                self.auc_fn(self.fold_probs['test'], self.fold_targets['test']),
+                                self.sen_fn(self.fold_probs['test'], self.fold_targets['test']),
+                                self.spe_fn(self.fold_probs['test'], self.fold_targets['test']),
+                               ]
+        overall_val_metrics = [
+                                self.acc_fn(self.fold_probs['val'], self.fold_targets['val']),
+                                self.ap_fn(self.fold_probs['val'], self.fold_targets['val']),
+                                self.auc_fn(self.fold_probs['val'], self.fold_targets['val']),
+                                self.sen_fn(self.fold_probs['val'], self.fold_targets['val']),
+                                self.spe_fn(self.fold_probs['val'], self.fold_targets['val']),
+                               ]
+        for i, r in enumerate(overall_test_metrics):
+            overall_test_metrics[i] = r.cpu().detach().numpy()
+        for i, r in enumerate(overall_val_metrics):
+            overall_val_metrics[i] = r.cpu().detach().numpy()
+
+        with open(f"{self.log_dir}/overall_results.csv", 'w') as out_file:
+            out_file.write('loss,AP,AUC,SEN,SPE\n')
+            out_file.writelines([f"Mean: {r}\n" for r in metric_results.mean(axis=0)])
+            out_file.write(f"Overall Val: {overall_val_metrics}\n")
+            out_file.write(f"Overall Test: {overall_test_metrics}\n")
+        
+        return metric_results, metric_results.mean(axis=0), overall_test_metrics, overall_val_metrics
 
 
 
