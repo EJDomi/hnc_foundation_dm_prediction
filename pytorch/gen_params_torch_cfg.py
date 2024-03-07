@@ -1,10 +1,13 @@
 #!/usr/bin/env python
 
 model_config = {
+                "model_name": 'ClinicalGatedGCN',
+                "extractor_name": 'ResNet',
                 "data_type": 'radiomics',
                 "scaling_type": 'MinMax',
                 "with_edge_attr": False,
                 "cross_val": True,
+                "nested_cross_val": False,
                 "edge_dim": 1,
                 "n_clinical": 29,
                 "use_clinical": False, 
