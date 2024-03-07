@@ -39,6 +39,7 @@ class DatasetGeneratorRadiomics(Dataset):
         labels = dp.retrieve_patients(self.data_path)
         y = labels.loc[self.patients]
         self.y = y['has_dm'] & (y['survival_dm'] < self.years)
+        #self.y = y['has_dm']
 
         super(DatasetGeneratorRadiomics, self).__init__(pre_transform=pre_transform)
 
@@ -144,8 +145,8 @@ class DatasetGeneratorImage(Dataset):
             self.clinical_features = None
  
         labels = dp.retrieve_patients(self.data_path)
-        y = labels.loc[self.patients]
-        self.y = y['has_dm'] & (y['survival_dm'] < self.years)
+        self.y_source = labels.loc[self.patients]
+        self.y = self.y_source['has_dm'] & (self.y_source['survival_dm'] < self.years)
 
         if self.config['augment']:
             aug_pos_pats = self.y[self.y==1]
@@ -299,14 +300,14 @@ class DatasetGeneratorImage(Dataset):
                 clinical = None
             if len(self.edge_dict[pat]) == 0:
                 if self.config['with_edge_attr']:
-                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), edge_attr=torch.tensor([[0.]]), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical)
+                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), edge_attr=torch.tensor([[0.]]), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=pat)
                 else:
-                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical)
+                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=pat)
             else:
                 edges = torch.tensor([[edge_idx_map[gtv], edge_idx_map[gtv2]] for gtv, gtv2 in self.edge_dict[pat]], dtype=torch.int64)
                 #edges_op = torch.tensor([[edge_idx_map[gtv2], edge_idx_map[gtv]] for gtv, gtv2 in self.edge_dict[pat]], dtype=torch.int64)
                 #edges = torch.cat((edges, edges_op), 0)
-                data = Data(x=graph_array, edge_index=edges.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical)
+                data = Data(x=graph_array, edge_index=edges.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=pat)
 
 
             if self.config['with_edge_attr'] and len(self.edge_dict[pat]) != 0:

@@ -27,6 +27,7 @@ from hnc_project.pytorch.gated_gcn import GatedGCN, ClinicalGatedGCN
 from hnc_project.pytorch.deep_gcn import DeepGCN, AltDeepGCN
 from hnc_project.pytorch.graphu_gcn import myGraphUNet
 from hnc_project.pytorch.resnet import resnet50
+from hnc_project.pytorch.resnet_spottune import SpotTune
 from hnc_project.pytorch.transfer_layer_translation_cfg import layer_loop, layer_loop_downsample
 
 MODELS = ['SimpleGCN',
@@ -50,11 +51,13 @@ class RunModel(object):
         self.class_weights = None
         self.data_type = config['data_type']
         self.model_name = config['model_name']
+        self.extractor_name = config['extractor_name']
         self.with_edge_attr = config['with_edge_attr']
         self.n_clinical = config['n_clinical']
         self.edge_dim = config['edge_dim']
         self.scaling_type = config['scaling_type']
         self.cross_val = config['cross_val']
+        self.nested_cross_val = config['nested_cross_val']
         self.augment = config['augment']
 
         if f"{self.seed}" in self.config['clinical_mean'].keys():
@@ -121,34 +124,49 @@ class RunModel(object):
         if self.feature_extractor is None and self.config['data_type'] == 'image' and 'EXT' in self.model_name:
             raise ValueError(f"Need to set feature extractor before initializing model")
 
+        if self.feature_extractor is not None:
+            if 'SpotTune' in self.extractor_name:
+                in_channels = self.feature_extractor.resnet.classify.out_features
+            else:
+                in_channels = self.feature_extractor.classify.out_features
+        else:
+            in_channels = 64
+
+        if 'both' in self.data_type:
+            in_channels += len(self.data[0].radiomics[0])
+
         if self.model_name == 'SimpleGCN':
             self.model = SimpleGCN(self.data.num_node_features, 64, self.n_classes, self.config['dropout']).to(self.device)
             print(f"{self.model_name} set")
         elif self.model_name == 'ClinicalGatedGCN':
             if self.config['data_type'] == 'image':
-                self.model = ClinicalGatedGCN(self.feature_extractor.linear3.out_features, 64, self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
+                self.model = ClinicalGatedGCN(in_channels, 64, self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
             elif self.config['data_type'] == 'both':
-                in_channels = len(self.data[0].radiomics[0]) + self.feature_extractor.linear3.out_features
                 self.model = ClinicalGatedGCN(in_channels, 64, self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
             else:
                 self.model = ClinicalGatedGCN(self.data.num_node_features, 64, self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
+
         elif self.model_name == 'GatedGCN':
             self.model = GatedGCN(self.data.num_node_features, 64, self.n_classes, self.edge_dim, self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
+
         elif self.model_name == 'EXTGatedResNetGCN':
-            self.model = GatedGCN(self.feature_extractor.linear3.out_features, 64, self.n_classes, self.edge_dim, self.config['dropout']).to(self.device)
+            self.model = GatedGCN(in_channels, 64, self.n_classes, self.edge_dim, self.config['dropout']).to(self.device)
+
         elif self.model_name == 'myGraphUNet':
-            self.model = myGraphUNet(self.feature_extractor.linear3.out_features, 64, self.n_classes, self.n_clinical, self.config['dropout']).to(self.device)
+            self.model = myGraphUNet(in_channels, 64, self.n_classes, self.n_clinical, self.config['dropout']).to(self.device)
             print(f"{self.model_name} does not use edge_attr, setting with_edge_attr to False")
             self.with_edge_attr = False
             self.config['with_edge_attr'] = False 
             print(f"{self.model_name} set")
+
         elif self.model_name == 'DeepGCN':
-            self.model = DeepGCN(self.feature_extractor.linear3.out_features, 64, self.config['num_deep_layers'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
+            self.model = DeepGCN(in_channels, 64, self.config['num_deep_layers'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
+
         elif self.model_name == 'AltDeepGCN':
-            in_channels = len(self.data[0].radiomics[0]) + self.feature_extractor.linear3.out_features
+            in_channels = len(self.data[0].radiomics[0]) + in_channels
             self.model = AltDeepGCN(in_channels, 64, self.config['num_deep_layers'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
           
@@ -173,10 +191,71 @@ class RunModel(object):
         #self.lr_sched = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=self.config['lr_steps'], gamma=self.config['lr_factor'], verbose=True)
 
 
+
     def set_feature_extractor(self, transfer=None):
-        self.feature_extractor = resnet50(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
-        #self.feature_extractor.classify = nn.Identity() 
-        if transfer == 'MedicalNet':
+        if self.extractor_name == 'ResNet':
+            self.feature_extractor = resnet50(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
+            #self.feature_extractor.classify = nn.Identity() 
+            if transfer == 'MedicalNet':
+                device = 'cuda' if torch.cuda.is_available() else 'cpu'
+                initial_state = torch.load('./models/resnet_50.pth', map_location=self.device)['state_dict']
+                fixed_state = {}
+                for k, v in initial_state.items():
+                    if 'layer' in k:
+                        mod_name = k.replace('module', 'blocks')
+                    else:
+                        mod_name = k.replace('module.', '')
+                    for name, new in layer_loop.items():
+                        if name in mod_name:
+                            mod_name = mod_name.replace(name, new)
+                    for name, new in layer_loop_downsample.items():
+                        if name in mod_name:
+                            mod_name = mod_name.replace(name, new)
+                    fixed_state[mod_name] = v
+
+                if self.n_channels > 1:
+                    fixed_state['conv1.weight'] = fixed_state['conv1.weight'].repeat(1,self.n_channels,1,1,1)/self.n_channels  
+
+                self.feature_extractor.load_state_dict(fixed_state, strict=False)
+                for name, p in self.feature_extractor.named_parameters():
+                    p.requires_grad = False
+
+            if transfer == 'ImageNet':
+                initial_state = torchvision.models.resnet50(weights='DEFAULT').state_dict()
+
+                fixed_state = OrderedDict()
+                for k, v in initial_state.items():
+                    mod_name = k
+                    parallel_mod_name = k
+                    for name, new in layer_loop.items():
+                        if name in mod_name:
+                            mod_name = mod_name.replace(name, f"blocks.{new}")
+                    for name, new in layer_loop_downsample.items():
+                        if name in mod_name:
+                            mod_name = mod_name.replace(name, new)
+                    fixed_state[mod_name] = v
+
+                for name, w in fixed_state.items():
+                    if 'blocks' in name and any(i in name for i in ('downsample', 'conv1', 'conv3')):
+                        fixed_state[name] = w.unsqueeze(-1)
+                    elif 'conv1' in name:
+                        #fixed_state[name] = w.unsqueeze(-1).transpose(-1, 2).repeat(1,1,7,1,1)
+                        fixed_state[name] = w.unsqueeze(-1).repeat(1,1,1,1,7)
+                    elif 'conv2' in name:
+                        #fixed_state[name] = w.unsqueeze(-1).transpose(-1, 2).repeat(1,1,3,1,1)
+                        fixed_state[name] = w.unsqueeze(-1).repeat(1,1,1,1,3)
+                    else:
+                        fixed_state[name] = w
+
+                fixed_state['conv1.weight'] = fixed_state['conv1.weight'].mean(axis=1).unsqueeze(1).repeat(1,self.n_channels,1,1,1)/self.n_channels
+
+                self.feature_extractor.load_state_dict(fixed_state, strict=False)
+                for name, p in self.feature_extractor.named_parameters():
+                    p.requires_grad=False
+            print(f"feature extractor with transfer learning: {self.config['transfer']} set")
+
+        if self.extractor_name == 'SpotTune':
+            self.feature_extractor = SpotTune(num_classes=64, in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
             initial_state = torch.load('./models/resnet_50.pth', map_location=self.device)['state_dict']
             fixed_state = {}
@@ -193,46 +272,19 @@ class RunModel(object):
                         mod_name = mod_name.replace(name, new)
                 fixed_state[mod_name] = v
 
+                fixed_state_v2 = {}
+                for k, v in fixed_state.items():
+                    fixed_state_v2[k] = v
+                    fixed_state_v2[k.replace('blocks', 'parallel_blocks')] = v
+
             if self.n_channels > 1:
                 fixed_state['conv1.weight'] = fixed_state['conv1.weight'].repeat(1,self.n_channels,1,1,1)/self.n_channels  
 
             self.feature_extractor.load_state_dict(fixed_state, strict=False)
-            for name, p in self.feature_extractor.named_parameters():
-                p.requires_grad = False
+            self.freeze_layers(ignore=['classify', 'parallel_blocks', 'agent']) 
+            print(f"feature extractor SpotTune set")
 
-        if transfer == 'ImageNet':
-            initial_state = torchvision.models.resnet50(weights='DEFAULT').state_dict()
 
-            fixed_state = OrderedDict()
-            for k, v in initial_state.items():
-                mod_name = k
-                parallel_mod_name = k
-                for name, new in layer_loop.items():
-                    if name in mod_name:
-                        mod_name = mod_name.replace(name, f"blocks.{new}")
-                for name, new in layer_loop_downsample.items():
-                    if name in mod_name:
-                        mod_name = mod_name.replace(name, new)
-                fixed_state[mod_name] = v
-
-            for name, w in fixed_state.items():
-                if 'blocks' in name and any(i in name for i in ('downsample', 'conv1', 'conv3')):
-                    fixed_state[name] = w.unsqueeze(-1)
-                elif 'conv1' in name:
-                    #fixed_state[name] = w.unsqueeze(-1).transpose(-1, 2).repeat(1,1,7,1,1)
-                    fixed_state[name] = w.unsqueeze(-1).repeat(1,1,1,1,7)
-                elif 'conv2' in name:
-                    #fixed_state[name] = w.unsqueeze(-1).transpose(-1, 2).repeat(1,1,3,1,1)
-                    fixed_state[name] = w.unsqueeze(-1).repeat(1,1,1,1,3)
-                else:
-                    fixed_state[name] = w
-
-            fixed_state['conv1.weight'] = fixed_state['conv1.weight'].mean(axis=1).unsqueeze(1).repeat(1,self.n_channels,1,1,1)/self.n_channels
-
-            self.feature_extractor.load_state_dict(fixed_state, strict=False)
-            for name, p in self.feature_extractor.named_parameters():
-                p.requires_grad=False
-        print(f"feature extractor with transfer learning: {self.config['transfer']} set")
 
 
 
@@ -244,7 +296,7 @@ class RunModel(object):
         if ignore[0] == 'all':
             self.unfreeze_layers()
         else:
-            for name, p in self.model.named_parameters():
+            for name, p in self.feature_extractor.named_parameters():
                 if any([i in name for i in ignore]):
                     p.requires_grad = True
                 else:
@@ -364,9 +416,10 @@ class RunModel(object):
             self.class_weights = [len(self.y_train[self.y_train==0]) / np.sum(self.y_train)]
 
 
+
     def get_std_norm(self):
 
-        if self.config['use_clinical'] and self.clinical_mean is None:
+        if self.config['use_clinical'] and (self.clinical_mean is None or len(self.clinical_mean) < 1):
             scale_features = None
             self.clinical_mean = []
             self.clinical_std = []
@@ -375,7 +428,7 @@ class RunModel(object):
                     if i == 0:
                         scale_features = feat.clinical[0][[0, 1]].unsqueeze(0)
                         continue
-                    scale_features = torch.cat((scale_features, feat.clinical[[0, 1]].unsqueeze(0)), 0)
+                    scale_features = torch.cat((scale_features, feat.clinical[0][[0, 1]].unsqueeze(0)), 0)
                 
                 self.clinical_mean.append(scale_features.mean(0))
                 self.clinical_std.append(scale_features.std(0))
@@ -401,14 +454,18 @@ class RunModel(object):
 
 
     def set_train_loader(self):
-        if self.cross_val:
+        if self.nested_cross_val:
+            self.train_nested_dataloaders = [[Dataloader(self.data[nest], batch_size=self.batch_size, shuffle=True, pin_memory=True) for nest in fold] for fold in self.nested_train_splits]
+        elif self.cross_val:
             self.train_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, shuffle=True, pin_memory=True) for fold in self.train_splits]
         else:
             self.train_dataloader = DataLoader(self.data[self.idx_train], batch_size=self.batch_size, shuffle=True, pin_memory=True)
 
 
     def set_val_loader(self):
-        if self.cross_val:
+        if self.nested_cross_val:
+            self.val_nested_dataloaders = [[Dataloader(self.data[nest], batch_size=self.batch_size, shuffle=False, pin_memory=True) for nest in fold] for fold in self.nested_train_splits]
+        elif self.cross_val:
             self.val_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, shuffle=False, pin_memory=True) for fold in self.val_splits]
         else:
             self.val_dataloader = DataLoader(self.data[self.idx_val], batch_size=self.batch_size, shuffle=False, pin_memory=True)
@@ -522,9 +579,9 @@ class RunModel(object):
                 spe = self.spe_fn(pred, batch.y)
         
         #Backpropagate
-            self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
+            self.optimizer.zero_grad()
             
             print(f"[{batch_idx+1:02g}/{num_batches}][{'='*int((100*((batch_idx+1)/num_batches))//5) + '.'*int((100*((num_batches-(batch_idx+1))/num_batches))//5)}] "
                   f"loss: {loss:>0.4f}, "
@@ -562,10 +619,13 @@ class RunModel(object):
 
 
 
-    def test(self, data_to_use='test', cross_idx=None):
+    def test(self, data_to_use='test', cross_idx=None, nest_idx=None):
         if data_to_use == 'val':
             if cross_idx is not None:
-                dataloader = self.val_cross_dataloaders[cross_idx]
+                if nest_idx is not None:
+                    dataloader = self.val_nested_dataloaders[cross_idx][nest_idx]
+                else:
+                    dataloader = self.val_cross_dataloaders[cross_idx]
             else:
                 dataloader = self.val_dataloader
         elif data_to_use == 'test':
@@ -575,7 +635,10 @@ class RunModel(object):
                 dataloader = self.test_dataloader
         elif data_to_use == 'train':
             if cross_idx is not None:
-                dataloader = self.train_cross_dataloaders[cross_idx]
+                if nest_idx is not None:
+                    dataloader = self.train_nested_dataloaders[cross_idx][nest_idx]
+                else:
+                    dataloader = self.train_cross_dataloaders[cross_idx]
             else:
                 dataloader = self.train_dataloader
 
@@ -674,14 +737,14 @@ class RunModel(object):
 
         if data_to_use == 'val':
             #if iap > self.best_ap and self.epoch > 40:
-            if test_loss < self.best_loss and self.epoch > 40:
+            if test_loss < self.best_loss and self.epoch > 25:
                 print(f"#################new best model saved###############")
                 #self.best_ap = iap
                 self.best_loss = test_loss
                 out_path = os.path.join(self.log_dir, f"best_model_{self.epoch}_{test_loss:0.2f}_{metric_M:>0.2f}_{iauc:>0.2f}.pth")
                 self.best_model = {
                     'model_state_dict': copy.deepcopy(self.model.state_dict()),
-                    'extractor_state_dict': copy.deepcopy(self.feature_extractor.state_dict()),
+                    #'extractor_state_dict': copy.deepcopy(self.feature_extractor.state_dict()),
                     'optimizer_state_dict': copy.deepcopy(self.optimizer.state_dict()),
                     'config' : self.config,
                     'epoch': self.epoch,
@@ -766,8 +829,8 @@ class RunModel(object):
 
 
     def run_nested_crossval(self):
-        if not self.cross_val:
-            raise ValueError('cross_val needs to be set to True to run')
+        if not self.cross_val and not self.nested_cross_val:
+            raise ValueError('cross_val and nested_cross_val need to be set to True to run')
         self.fold_metrics = []
         self.fold_probs = {}
         self.fold_targets = {}
@@ -779,13 +842,16 @@ class RunModel(object):
             self.fold_targets[k] = []
 
         for fold_idx in range(5):
+            for k in keys:
+                self.fold_probs[k][fold_idx] = []
+                self.fold_targets[k][fold_idx] = []
             for nest_idx in range(4):
                 if self.feature_extractor is not None and self.data_type!='radiomics':
                     self.set_feature_extractor(transfer=self.config['transfer'])
                 self.reset_metrics()
                 self.set_model()
                 self.set_loss_fn(cross_idx=fold_idx)
-                results = self.run(cross_idx=fold_idx)
+                results = self.run(cross_idx=fold_idx, nest_idx=nest_idx)
                 self.fold_metrics.append(results[0])
                 self.fold_probs['train'][fold_idx].append(results[1][0][0])
                 self.fold_targets['train'][fold_idx].append(results[1][0][1])
@@ -831,15 +897,15 @@ class RunModel(object):
 
 
 
-    def run(self, cross_idx=None):
+    def run(self, cross_idx=None, nest_idx=None):
         out_csv = []
         out_csv.append(f"epoch,train_loss,train_acc,train_auc,val_loss,val_acc,val_auc\n")
         self.epoch = 0
         for t in range(self.n_epochs):
             print(f"Epoch {t+1}/{self.n_epochs}")
             self.epoch = t + 1
-            train_results = self.train('train', cross_idx=cross_idx)
-            val_results = self.test('val', cross_idx=cross_idx)
+            train_results = self.train('train', cross_idx=cross_idx, nest_idx=nest_idx)
+            val_results = self.test('val', cross_idx=cross_idx, nest_idx=nest_idx)
             if self.config['lr_sched']:
                 print('sched step')
                 self.lr_sched.step(val_results[0][0])   
@@ -849,9 +915,9 @@ class RunModel(object):
             print(f"-----------------------------------------------------------")
         self.epoch += 1
         print("Train Total")
-        final_train = self.test('train', cross_idx=cross_idx)
+        final_train = self.test('train', cross_idx=cross_idx, nest_idx=nest_idx)
         print("Val Total")
-        final_val = self.test('val', cross_idx=cross_idx)
+        final_val = self.test('val', cross_idx=cross_idx, nest_idx=nest_idx)
         print("Test")
         final_test = self.test('test', cross_idx=cross_idx)
         out_csv.append(f"       loss, AP, AUC, SEN, SPE\n")
