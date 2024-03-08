@@ -147,6 +147,8 @@ class DatasetGeneratorImage(Dataset):
         labels = dp.retrieve_patients(self.data_path)
         self.y_source = labels.loc[self.patients]
         self.y = self.y_source['has_dm'] & (self.y_source['survival_dm'] < self.years)
+        #self.y = self.y_source['has_lr'] & (self.y_source['survival_lr'] < self.years)
+        #self.y = self.y_source['has_dm']
 
         if self.config['augment']:
             aug_pos_pats = self.y[self.y==1]
