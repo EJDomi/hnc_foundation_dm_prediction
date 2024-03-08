@@ -12,7 +12,6 @@ import torch
 from torch_geometric.data import Dataset, Data
 import torch_geometric.transforms as T
 
-import elasticdeform
 
 
 class DatasetGeneratorRadiomics(Dataset):
@@ -180,19 +179,6 @@ class DatasetGeneratorImage(Dataset):
                 self.patients.extend(aug_noise_pats.index)
                 self.y = pd.concat([self.y, aug_noise_pats])
 
-            if 'deform' in self.config['augments']:
-                for dfm in range(self.config['n_deforms']):
-                    aug_deform_pats = aug_pats.copy(deep=True)
-                    aug_deform_pats.index = aug_pats.index + f"_deform_{dfm}"
-                    self.patients.extend(aug_deform_pats.index)
-                    self.y = pd.concat([self.y, aug_deform_pats])
-                if self.config['positive_increase'] > 0:
-                    for dfm in range(self.config['positive_increase']):
-                        aug_deform_pats = aug_pos_pats.copy(deep=True)
-                        aug_deform_pats.index = aug_pos_pats.index + f"_deformation_pos_{dfm}"
-                        self.patients.extend(aug_deform_pats.index)
-                        self.y = pd.concat([self.y, aug_deform_pats])
-                 
             if 'flip' in self.config['augments']:
                 aug_flip_pats = aug_pats.copy(deep=True)
                 aug_flip_pats.index = aug_pats.index + f"_flip"
@@ -258,10 +244,11 @@ class DatasetGeneratorImage(Dataset):
                 #patch_image_norm = norm_filter.Execute(patch_image)
 
                 
-
                 #Image currently given as 2-channels as image and mask
                 patch_array = sitk.GetArrayFromImage(patch_image)
                 struct_array = sitk.GetArrayFromImage(patch_struct)
+
+                patch_array = np.where(struct_array, patch_array, 0)
 
                 if self.pre_transform is not None:
                     if self.pre_transform == 'MinMax':
@@ -271,24 +258,22 @@ class DatasetGeneratorImage(Dataset):
 
                 if 'rotation' in full_pat:
                     patch_scaled = self.apply_rotation(patch_scaled, angle)
-                    struct_array = self.apply_rotation(struct_array, angle)
+                    #struct_array = self.apply_rotation(struct_array, angle)
 
                 if 'noise' in full_pat:
                     patch_scaled = self.apply_noise(patch_scaled)
 
                 if 'flip' in full_pat:
                     patch_scaled = self.apply_flip(patch_scaled)
-                    struct_array = self.apply_flip(struct_array)
+                    #struct_array = self.apply_flip(struct_array)
 
-                if 'deform' in full_pat:
-                    [patch_scaled, struct_array] = self.apply_deformation(patch_scaled, struct_array)
-
-
-                node_image = np.stack((patch_scaled, struct_array))
+                #node_image = np.stack((patch_scaled, struct_array))
                 #node_image = np.moveaxis(node_image, [0, 1, 2, 3], [-1, -4, -3, -2]) 
                 print(f"        {patch_name}")
-                print(f"        {np.shape(node_image)}")
-                graph_array.append(node_image)
+                #print(f"        {np.shape(node_image)}")
+                print(f"        {np.shape(patch_scaled)}")
+                #graph_array.append(node_image)
+                graph_array.append(np.expand_dims(patch_scaled, 0))
 
             graph_array = np.array(graph_array)
 
@@ -341,10 +326,6 @@ class DatasetGeneratorImage(Dataset):
         arr = rotate(arr, angle, preserve_range=True)
         return arr
 
-
-    def apply_deformation(self, arr, struct):
-        arr = elasticdeform.deform_random_grid([arr, struct], sigma=5, order=3, axis=[(0,1,2), (0,1,2)])
-        return arr
 
 
     def apply_flip(self, arr):
@@ -410,19 +391,6 @@ class DatasetGeneratorBoth(Dataset):
                 self.patients.extend(aug_noise_pats.index)
                 self.y = pd.concat([self.y, aug_noise_pats])
 
-            if 'deform' in self.config['augments']:
-                for dfm in range(self.config['n_deforms']):
-                    aug_deform_pats = aug_pats.copy(deep=True)
-                    aug_deform_pats.index = aug_pats.index + f"_deform_{dfm}"
-                    self.patients.extend(aug_deform_pats.index)
-                    self.y = pd.concat([self.y, aug_deform_pats])
-                if self.config['positive_increase'] > 0:
-                    for dfm in range(self.config['positive_increase']):
-                        aug_deform_pats = aug_pos_pats.copy(deep=True)
-                        aug_deform_pats.index = aug_pos_pats.index + f"_deformation_pos_{dfm}"
-                        self.patients.extend(aug_deform_pats.index)
-                        self.y = pd.concat([self.y, aug_deform_pats])
-                 
             if 'flip' in self.config['augments']:
                 aug_flip_pats = aug_pats.copy(deep=True)
                 aug_flip_pats.index = aug_pats.index + f"_flip"
@@ -514,9 +482,6 @@ class DatasetGeneratorBoth(Dataset):
                     patch_scaled = self.apply_flip(patch_scaled)
                     struct_array = self.apply_flip(struct_array)
 
-                if 'deform' in full_pat:
-                    [patch_scaled, struct_array] = self.apply_deformation(patch_scaled, struct_array)
-
 
                 node_image = np.stack((patch_scaled, struct_array))
                 #node_image = np.moveaxis(node_image, [0, 1, 2, 3], [-1, -4, -3, -2]) 
@@ -575,11 +540,6 @@ class DatasetGeneratorBoth(Dataset):
 
     def apply_rotation(self, arr, angle):
         arr = rotate(arr, angle, preserve_range=True)
-        return arr
-
-
-    def apply_deformation(self, arr, struct):
-        arr = elasticdeform.deform_random_grid([arr, struct], sigma=5, order=3, axis=[(0,1,2), (0,1,2)])
         return arr
 
 
