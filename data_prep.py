@@ -25,6 +25,9 @@ def affirm_dm(val):
     val = str(val)
     return np.any([v in val.lower() for v in ('no', 'distant metastasis')])
 
+def affirm_lr(val):
+    val = str(val)
+    return np.any([v in val.lower() for v in ('no', 'locoregional')])
 
 def retrieve_patients(csv_dir):
     """
@@ -40,15 +43,21 @@ def retrieve_patients(csv_dir):
 
     base_clinical_info['survival_dm'] = base_clinical_info['Disease-free interval (months)'] / 12.
     updated_clinical_info['survival_dm'] = updated_clinical_info['Freedom from distant metastasis_duration of Merged updated ASRM V2'] / 365.
+    base_clinical_info['survival_lr'] = base_clinical_info['Disease-free interval (months)'] / 12.
+    updated_clinical_info['survival_lr'] = updated_clinical_info['Locoregional control_duration of Merged updated ASRM V2'] / 365.
     base_clinical_info['has_dm'] = [affirm_dm(v) for v in base_clinical_info['Site of recurrence (Distal/Local/ Locoregional)']] 
     updated_clinical_info['has_dm'] = [affirm_dm(v) for v in updated_clinical_info['Freedom from distant metastasis']] 
+    base_clinical_info['has_lr'] = [affirm_lr(v) for v in base_clinical_info['Site of recurrence (Distal/Local/ Locoregional)']] 
+    updated_clinical_info['has_lr'] = [affirm_lr(v) for v in updated_clinical_info['Locoregional control']] 
 
     clinical_info = updated_clinical_info.join(base_clinical_info, how='outer', lsuffix='_updated', rsuffix='_base')
 
     clinical_info['survival_dm'] = clinical_info['survival_dm_updated'].combine_first(clinical_info['survival_dm_base'])
     clinical_info['has_dm'] = clinical_info['has_dm_updated'].combine_first(clinical_info['has_dm_base']) 
+    clinical_info['survival_lr'] = clinical_info['survival_lr_updated'].combine_first(clinical_info['survival_lr_base'])
+    clinical_info['has_lr'] = clinical_info['has_lr_updated'].combine_first(clinical_info['has_lr_base']) 
     
-    patients = clinical_info[['survival_dm', 'has_dm']]
+    patients = clinical_info[['survival_dm', 'has_dm', 'has_lr', 'survival_lr']]
 
     return patients
 
