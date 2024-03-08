@@ -15,6 +15,7 @@ model_config = {
 	        "n_epochs": 100,
                 "seed": 42,
                 "n_classes": 1,
+                "n_extracted_features": 64,
                 "n_channels": 2,
                 #"learning_rate": 0.01,
 	        "dropout": 0.0,

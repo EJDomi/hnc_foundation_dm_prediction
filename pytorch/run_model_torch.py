@@ -197,7 +197,7 @@ class RunModel(object):
 
     def set_feature_extractor(self, transfer=None):
         if self.extractor_name == 'ResNet':
-            self.feature_extractor = resnet50(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
+            self.feature_extractor = resnet50(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
             #self.feature_extractor.classify = nn.Identity() 
             if transfer == 'MedicalNet':
                 device = 'cuda' if torch.cuda.is_available() else 'cpu'
