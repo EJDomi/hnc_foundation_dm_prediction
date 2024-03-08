@@ -740,7 +740,7 @@ class RunModel(object):
 
         if data_to_use == 'val':
             #if iap > self.best_ap and self.epoch > 40:
-            if test_loss < self.best_loss and self.epoch > 25:
+            if test_loss <= self.best_loss and self.epoch > 25:
                 print(f"#################new best model saved###############")
                 #self.best_ap = iap
                 self.best_loss = test_loss
@@ -924,6 +924,11 @@ class RunModel(object):
             out_csv.append(f"{self.epoch},{train_results[0]},{train_results[1]},{train_results[2]},{val_results[0][0]},{val_results[0][1]},{val_results[0][2]}\n")
             print(f"-----------------------------------------------------------")
         self.epoch += 1
+
+        if self.best_model is not None:
+             self.feature_extractor.load_state_dict(self.best_model['extractor_state_dict'])
+             self.model.load_state_dict(self.best_model['model_state_dict'])
+             self.optimizer.load_state_dict(self.best_model['optimizer_state_dict'])
         print("Train Total")
         final_train = self.test('train', cross_idx=cross_idx, nest_idx=nest_idx)
         print("Val Total")
