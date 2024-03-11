@@ -24,7 +24,7 @@ model_config = {
                 "lr_sched": True,
                 "lr_factor": 0.5,
                 "lr_patience": 10,
-                "lr_mode": 'min',
+                "lr_mode": 'max',
                 "log_dir": None,
                 "augment": False,
                 "augments": ['rotation'],
