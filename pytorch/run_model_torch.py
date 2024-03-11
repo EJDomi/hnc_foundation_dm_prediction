@@ -152,7 +152,7 @@ class RunModel(object):
             if self.config['data_type'] == 'image':
                 self.model = GatedGCN(in_channels, 64, self.n_classes, self.edge_dim, self.config['dropout']).to(self.device)
             else:
-                self.model = GatedGCN(self.data.num_node_features, 64, self.n_classes, self.edge_dim, self.config['dropout']).to(self.device) 
+                self.model = GatedGCN(self.data._data.num_node_features, 64, self.n_classes, self.edge_dim, self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
 
         elif self.model_name == 'EXTGatedResNetGCN':
@@ -415,9 +415,14 @@ class RunModel(object):
                         self.nested_train_splits[idx][jdx].extend([self.data.y.index.get_loc(pat) for pat in self.nested_aug_splits[idx][jdx]])   
             
         else:
-            idx_train, self.idx_test, y_train, y_test = train_test_split(list(range(self.data.len())), self.data.y.values, test_size=0.2, random_state=42, stratify=self.data.y.values) 
-            self.idx_train, self.idx_val, self.y_train, self.y_val = train_test_split(idx_train, y_train, test_size=0.4, random_state=42, stratify=y_train) 
-            self.class_weights = [len(self.y_train[self.y_train==0]) / np.sum(self.y_train)]
+            if self.data_type == 'outside':
+                idx_train, self.idx_test, y_train, y_test = train_test_split(list(range(len(self.data._data.y))), self.data._data.y, test_size=0.2, random_state=42, stratify=self.data._data.y) 
+                self.idx_train, self.idx_val, self.y_train, self.y_val = train_test_split(idx_train, y_train, test_size=0.4, random_state=42, stratify=y_train) 
+                self.class_weights = [len(self.y_train[self.y_train==0]) / np.sum(self.y_train)]
+            else:
+                idx_train, self.idx_test, y_train, y_test = train_test_split(list(range(self.data.len())), self.data.y.values, test_size=0.2, random_state=42, stratify=self.data.y.values) 
+                self.idx_train, self.idx_val, self.y_train, self.y_val = train_test_split(idx_train, y_train, test_size=0.4, random_state=42, stratify=y_train) 
+                self.class_weights = [len(self.y_train[self.y_train==0]) / np.sum(self.y_train)]
 
 
 
@@ -651,7 +656,7 @@ class RunModel(object):
         size = len(dataloader.dataset)
         num_batches = len(dataloader)
         if self.feature_extractor is not None:
-            self.model.eval()
+            self.feature_extractor.eval()
         self.model.eval()
         test_loss = 0
         total_pred = []
@@ -745,10 +750,10 @@ class RunModel(object):
 
         if data_to_use == 'val':
             #if iap > self.best_ap and self.epoch > 40:
-            if test_loss <= self.best_loss and self.epoch > 25:
+            if iauc >= self.best_auc and self.epoch > 25:
                 print(f"#################new best model saved###############")
-                #self.best_ap = iap
-                self.best_loss = test_loss
+                self.best_auc = iauc
+                #self.best_loss = test_loss
                 out_path = os.path.join(self.log_dir, f"best_model_{self.epoch}_{test_loss:0.2f}_{metric_M:>0.2f}_{iauc:>0.2f}.pth")
                 self.best_model = {
                     'model_state_dict': copy.deepcopy(self.model.state_dict()),
