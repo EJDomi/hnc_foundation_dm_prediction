@@ -90,9 +90,10 @@ class RunModel(object):
             self.sen_fn = torchmetrics.classification.Recall(task='multiclass', num_classes=self.n_classes).to(self.device)
             self.confusion = torchmetrics.classification.ConfusionMatrix(task='multiclass', num_classes=self.n_classes).to(self.device)
 
-        self.log_dir = os.path.join('logs', self.config['log_dir'])
-        if self.log_dir is None:
+        if self.config['log_dir'] is None:
             self.log_dir = os.path.join('logs', datetime.now().strftime("%Y%m%d-%H%M%S"))
+        else:
+            self.log_dir = os.path.join('logs', self.config['log_dir'])
         print(f"logs are located at: {self.log_dir}")
         self.writer = SummaryWriter(self.log_dir)
         print('remember to set the data')
@@ -519,6 +520,8 @@ class RunModel(object):
 
         size = len(dataloader.dataset)
         num_batches = len(dataloader)
+        if self.feature_extractor is not None:
+            self.feature_extractor.train()
         self.model.train()
         total_loss = 0.
         
@@ -647,6 +650,8 @@ class RunModel(object):
 
         size = len(dataloader.dataset)
         num_batches = len(dataloader)
+        if self.feature_extractor is not None:
+            self.model.eval()
         self.model.eval()
         test_loss = 0
         total_pred = []
