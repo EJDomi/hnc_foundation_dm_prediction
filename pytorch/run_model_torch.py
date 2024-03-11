@@ -651,7 +651,7 @@ class RunModel(object):
         size = len(dataloader.dataset)
         num_batches = len(dataloader)
         if self.feature_extractor is not None:
-            self.model.eval()
+            self.feature_extractor.eval()
         self.model.eval()
         test_loss = 0
         total_pred = []
