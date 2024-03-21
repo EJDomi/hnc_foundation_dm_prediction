@@ -132,7 +132,12 @@ class DatasetGeneratorImage(Dataset):
         self.edge_dict = pd.read_pickle(edge_file)
         self.locations = pd.read_pickle(locations_file)
         self.pdir = self.data_path.joinpath(f"graph_staging/{self.patch_path.name}_{edge_file.split('/')[-1].replace('.pkl', '')}_{version}")
+        self.patient_skip = [ 
+            'HNSCC-01-0271',
+            'HNSCC-01-0379',
+            ]
         self.patients = [pat.as_posix().split('/')[-1] for pat in self.patch_path.glob('*/') if '.pkl' not in str(pat)]
+        self.patients = [pat for pat in self.patients if pat not in self.patient_skip]
         self.years = 2
 
         self.rng_noise = np.random.default_rng(42)
@@ -210,13 +215,14 @@ class DatasetGeneratorImage(Dataset):
     def download(self):
         pass
 
-    # Function for processing images as node features of graph (doesn't work properly ---- yet ...
-    # for this function to be usable again, would need to add ResNet or similar to process the node feature image to etract features for use as node features
+
     def process(self):
         print("processed graph files not present, starting graph production")
         norm_filter = sitk.NormalizeImageFilter()
-        for idx, full_pat in enumerate(self.patients):
+        idx = 0
+        for full_pat in self.patients:
             pat = full_pat.split('_')[0]
+            if pat in self.patient_skip: continue
             print(f"    {full_pat}, {idx}")
             graph_array = []
             edge_idx_map = {}
@@ -234,6 +240,7 @@ class DatasetGeneratorImage(Dataset):
             patch_list = []
             for i, patch in enumerate(patches):
                 patch_name = patch.as_posix().split('/')[-1].split('_')[-1].replace('.nii.gz','')
+                #if i > 0: continue
                 patch_list.append(patch_name)
 
                 edge_idx_map[patch_name] = i
@@ -258,14 +265,14 @@ class DatasetGeneratorImage(Dataset):
 
                 if 'rotation' in full_pat:
                     patch_scaled = self.apply_rotation(patch_scaled, angle)
-                    #struct_array = self.apply_rotation(struct_array, angle)
+                    struct_array = self.apply_rotation(struct_array, angle)
 
                 if 'noise' in full_pat:
                     patch_scaled = self.apply_noise(patch_scaled)
 
                 if 'flip' in full_pat:
                     patch_scaled = self.apply_flip(patch_scaled)
-                    #struct_array = self.apply_flip(struct_array)
+                    struct_array = self.apply_flip(struct_array)
 
                 #node_image = np.stack((patch_scaled, struct_array))
                 #node_image = np.moveaxis(node_image, [0, 1, 2, 3], [-1, -4, -3, -2]) 
@@ -285,19 +292,20 @@ class DatasetGeneratorImage(Dataset):
                 clinical = torch.tensor(pd.to_numeric(self.clinical_features.loc[pat]).values, dtype=torch.float).unsqueeze(0)
             else:
                 clinical = None
-            if len(self.edge_dict[pat]) == 0:
+            #if len(self.edge_dict[pat]) == 0:
+            if len(patch_list) == 1:
                 if self.config['with_edge_attr']:
                     data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), edge_attr=torch.tensor([[0.]]), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=pat)
                 else:
                     data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=pat)
             else:
-                edges = torch.tensor([[edge_idx_map[gtv], edge_idx_map[gtv2]] for gtv, gtv2 in self.edge_dict[pat]], dtype=torch.int64)
+                edges = torch.tensor([[edge_idx_map[gtv], edge_idx_map[gtv2]] for gtv, gtv2 in self.edge_dict[pat] if gtv in patch_list and gtv2 in patch_list], dtype=torch.int64)
                 #edges_op = torch.tensor([[edge_idx_map[gtv2], edge_idx_map[gtv]] for gtv, gtv2 in self.edge_dict[pat]], dtype=torch.int64)
                 #edges = torch.cat((edges, edges_op), 0)
                 data = Data(x=graph_array, edge_index=edges.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=pat)
 
 
-            if self.config['with_edge_attr'] and len(self.edge_dict[pat]) != 0:
+            if self.config['with_edge_attr'] and len(patch_list) != 1:
                 sph_transform = T.Spherical()
                 norm_transform = T.Cartesian()
                 dist_transform = T.Distance()
@@ -307,6 +315,7 @@ class DatasetGeneratorImage(Dataset):
             
 
             torch.save(data, f"{self.processed_dir}/graph_{idx}.pt")
+            idx += 1
         
 
     def len(self):

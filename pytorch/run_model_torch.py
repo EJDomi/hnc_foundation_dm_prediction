@@ -27,6 +27,7 @@ from hnc_project.pytorch.gated_gcn import GatedGCN, ClinicalGatedGCN
 from hnc_project.pytorch.deep_gcn import DeepGCN, AltDeepGCN
 from hnc_project.pytorch.graphu_gcn import myGraphUNet
 from hnc_project.pytorch.resnet import resnet50
+from hnc_project.pytorch.cnn import CNN
 from hnc_project.pytorch.resnet_spottune import SpotTune
 from hnc_project.pytorch.transfer_layer_translation_cfg import layer_loop, layer_loop_downsample
 
@@ -172,6 +173,9 @@ class RunModel(object):
         elif self.model_name == 'AltDeepGCN':
             in_channels = len(self.data[0].radiomics[0]) + in_channels
             self.model = AltDeepGCN(in_channels, 64, self.config['num_deep_layers'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
+            print(f"{self.model_name} set")
+        elif self.model_name == 'CNN':
+            self.model = CNN(self.config['n_channels'], self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
           
         else:
@@ -418,7 +422,7 @@ class RunModel(object):
             if self.data_type == 'outside':
                 idx_train, self.idx_test, y_train, y_test = train_test_split(list(range(len(self.data._data.y))), self.data._data.y, test_size=0.2, random_state=42, stratify=self.data._data.y) 
                 self.idx_train, self.idx_val, self.y_train, self.y_val = train_test_split(idx_train, y_train, test_size=0.4, random_state=42, stratify=y_train) 
-                self.class_weights = [len(self.y_train[self.y_train==0]) / np.sum(self.y_train)]
+                self.class_weights = [len(self.y_train[self.y_train==0]) / self.y_train.sum()]
             else:
                 idx_train, self.idx_test, y_train, y_test = train_test_split(list(range(self.data.len())), self.data.y.values, test_size=0.2, random_state=42, stratify=self.data.y.values) 
                 self.idx_train, self.idx_val, self.y_train, self.y_val = train_test_split(idx_train, y_train, test_size=0.4, random_state=42, stratify=y_train) 
@@ -755,13 +759,21 @@ class RunModel(object):
                 self.best_auc = iauc
                 #self.best_loss = test_loss
                 out_path = os.path.join(self.log_dir, f"best_model_{self.epoch}_{test_loss:0.2f}_{metric_M:>0.2f}_{iauc:>0.2f}.pth")
-                self.best_model = {
-                    'model_state_dict': copy.deepcopy(self.model.state_dict()),
-                    'extractor_state_dict': copy.deepcopy(self.feature_extractor.state_dict()),
-                    'optimizer_state_dict': copy.deepcopy(self.optimizer.state_dict()),
-                    'config' : self.config,
-                    'epoch': self.epoch,
-                    'loss': test_loss,}
+                if self.feature_extractor is None:
+                    self.best_model = {
+                        'model_state_dict': copy.deepcopy(self.model.state_dict()),
+                        'optimizer_state_dict': copy.deepcopy(self.optimizer.state_dict()),
+                        'config' : self.config,
+                        'epoch': self.epoch,
+                        'loss': test_loss,}
+                else:
+                    self.best_model = {
+                        'model_state_dict': copy.deepcopy(self.model.state_dict()),
+                        'extractor_state_dict': copy.deepcopy(self.feature_extractor.state_dict()),
+                        'optimizer_state_dict': copy.deepcopy(self.optimizer.state_dict()),
+                        'config' : self.config,
+                        'epoch': self.epoch,
+                        'loss': test_loss,}
         total_pred = torch.tensor(total_pred)
         total_target = torch.tensor(total_target)
         if data_to_use == 'test':
@@ -928,7 +940,7 @@ class RunModel(object):
             val_results = self.test('val', cross_idx=cross_idx, nest_idx=nest_idx)
             if self.config['lr_sched']:
                 print('sched step')
-                self.lr_sched.step(val_results[0][0])   
+                self.lr_sched.step(val_results[0][2])   
                 #self.lr_sched.step()   
         
             out_csv.append(f"{self.epoch},{train_results[0]},{train_results[1]},{train_results[2]},{val_results[0][0]},{val_results[0][1]},{val_results[0][2]}\n")
@@ -936,7 +948,8 @@ class RunModel(object):
         self.epoch += 1
 
         if self.best_model is not None:
-             self.feature_extractor.load_state_dict(self.best_model['extractor_state_dict'])
+             if self.feature_extractor is not None:
+                 self.feature_extractor.load_state_dict(self.best_model['extractor_state_dict'])
              self.model.load_state_dict(self.best_model['model_state_dict'])
              self.optimizer.load_state_dict(self.best_model['optimizer_state_dict'])
         print("Train Total")
