@@ -418,7 +418,7 @@ class RunModel(object):
             if self.data_type == 'outside':
                 idx_train, self.idx_test, y_train, y_test = train_test_split(list(range(len(self.data._data.y))), self.data._data.y, test_size=0.2, random_state=42, stratify=self.data._data.y) 
                 self.idx_train, self.idx_val, self.y_train, self.y_val = train_test_split(idx_train, y_train, test_size=0.4, random_state=42, stratify=y_train) 
-                self.class_weights = [len(self.y_train[self.y_train==0]) / np.sum(self.y_train)]
+                self.class_weights = [len(self.y_train[self.y_train==0]) / self.y_train.sum()]
             else:
                 idx_train, self.idx_test, y_train, y_test = train_test_split(list(range(self.data.len())), self.data.y.values, test_size=0.2, random_state=42, stratify=self.data.y.values) 
                 self.idx_train, self.idx_val, self.y_train, self.y_val = train_test_split(idx_train, y_train, test_size=0.4, random_state=42, stratify=y_train) 
@@ -755,13 +755,21 @@ class RunModel(object):
                 self.best_auc = iauc
                 #self.best_loss = test_loss
                 out_path = os.path.join(self.log_dir, f"best_model_{self.epoch}_{test_loss:0.2f}_{metric_M:>0.2f}_{iauc:>0.2f}.pth")
-                self.best_model = {
-                    'model_state_dict': copy.deepcopy(self.model.state_dict()),
-                    'extractor_state_dict': copy.deepcopy(self.feature_extractor.state_dict()),
-                    'optimizer_state_dict': copy.deepcopy(self.optimizer.state_dict()),
-                    'config' : self.config,
-                    'epoch': self.epoch,
-                    'loss': test_loss,}
+                if self.feature_extractor is None:
+                    self.best_model = {
+                        'model_state_dict': copy.deepcopy(self.model.state_dict()),
+                        'optimizer_state_dict': copy.deepcopy(self.optimizer.state_dict()),
+                        'config' : self.config,
+                        'epoch': self.epoch,
+                        'loss': test_loss,}
+                else:
+                    self.best_model = {
+                        'model_state_dict': copy.deepcopy(self.model.state_dict()),
+                        'extractor_state_dict': copy.deepcopy(self.feature_extractor.state_dict()),
+                        'optimizer_state_dict': copy.deepcopy(self.optimizer.state_dict()),
+                        'config' : self.config,
+                        'epoch': self.epoch,
+                        'loss': test_loss,}
         total_pred = torch.tensor(total_pred)
         total_target = torch.tensor(total_target)
         if data_to_use == 'test':
@@ -835,8 +843,10 @@ class RunModel(object):
         with open(f"{self.log_dir}/overall_results.csv", 'w') as out_file:
             out_file.write('loss,AP,AUC,SEN,SPE\n')
             out_file.writelines([f"Mean: {r}\n" for r in metric_results.mean(axis=0)])
-            out_file.write(f"Overall Val: {overall_val_metrics}\n")
-            out_file.write(f"Overall Test: {overall_test_metrics}\n")
+            out_file.writelines([f"Overall Val: {met}\n" for met in overall_val_metrics])
+            out_file.writelines([f"Overall Test: {met}\n" for met in overall_test_metrics])
+            out_file.write(f"Mean Val: {np.mean(overall_val_metrics, axis=0)}\n")
+            out_file.write(f"Mean Test: {np.mean(overall_test_metrics, axis=0)}\n")
         
         return metric_results, metric_results.mean(axis=0), overall_test_metrics, overall_val_metrics
             
@@ -873,8 +883,8 @@ class RunModel(object):
                 self.fold_targets['train'][fold_idx].append(results[1][0][1])
                 self.fold_probs['val'][fold_idx].extend(results[1][1][0])
                 self.fold_targets['val'][fold_idx].extend(results[1][1][1])
-                self.fold_probs['test'][fold_idx].extend(results[1][2][0])
-                self.fold_targets['test'][fold_idx].extend(results[1][2][1])
+                self.fold_probs['test'][fold_idx].append(results[1][2][0])
+                self.fold_targets['test'][fold_idx].append(results[1][2][1])
 
    
         
@@ -882,11 +892,15 @@ class RunModel(object):
 
         overall_test_metrics = []
         overall_val_metrics = []
+        final_test_probs = []
+        final_test_targets = []
+        final_val_probs = []
+        final_val_targets = []
         for fold_idx in range(5):
             self.fold_probs['val'][fold_idx] = torch.tensor(self.fold_probs['val'][fold_idx]).to(self.device)
             self.fold_targets['val'][fold_idx] = torch.tensor(self.fold_targets['val'][fold_idx], dtype=torch.long).to(self.device)
-            self.fold_probs['test'][fold_idx] = torch.tensor(self.fold_probs['test'][fold_idx]).to(self.device)
-            self.fold_targets['test'][fold_idx] = torch.tensor(self.fold_targets['test'][fold_idx], dtype=torch.long).to(self.device)
+            self.fold_probs['test'][fold_idx] = torch.tensor(self.fold_probs['test'][fold_idx]).to(self.device).mean(axis=0)
+            self.fold_targets['test'][fold_idx] = torch.tensor(self.fold_targets['test'][fold_idx][0], dtype=torch.long).to(self.device)
             overall_test_metrics.append([
                                     self.acc_fn(self.fold_probs['test'][fold_idx], self.fold_targets['test'][fold_idx]),
                                     self.ap_fn(self.fold_probs['test'][fold_idx], self.fold_targets['test'][fold_idx]),
@@ -901,17 +915,36 @@ class RunModel(object):
                                     self.sen_fn(self.fold_probs['val'][fold_idx], self.fold_targets['val'][fold_idx]),
                                     self.spe_fn(self.fold_probs['val'][fold_idx], self.fold_targets['val'][fold_idx]),
                                    ])
+            #final_val_probs.extend(self.fold_probs['val']['fold_idx'])
+            #final_val_targets.extend(self.fold_targets['val']['fold_idx'])
+            final_test_probs.extend(self.fold_probs['test'][fold_idx])
+            final_test_targets.extend(self.fold_targets['test'][fold_idx])
+
+        #final_val_probs = torch.tensor(final_val_probs).to(self.device)
+        #final_val_targets = torch.tensor(final_val_targets).to(self.device)
+        self.final_test_probs = torch.tensor(final_test_probs).to(self.device)
+        self.final_test_targets = torch.tensor(final_test_targets).to(self.device)
+        final_test_metrics = [
+                                self.acc_fn(self.final_test_probs, self.final_test_targets),
+                                self.ap_fn(self.final_test_probs, self.final_test_targets),
+                                self.auc_fn(self.final_test_probs, self.final_test_targets),
+                                self.sen_fn(self.final_test_probs, self.final_test_targets),
+                                self.spe_fn(self.final_test_probs, self.final_test_targets),
+                               ]
         for fold_idx in range(5):
             for i, r in enumerate(overall_test_metrics[fold_idx]):
                 overall_test_metrics[fold_idx][i] = r.cpu().detach().numpy()
             for i, r in enumerate(overall_val_metrics[fold_idx]):
                 overall_val_metrics[fold_idx][i] = r.cpu().detach().numpy()
 
+        
         with open(f"{self.log_dir}/overall_results.csv", 'w') as out_file:
             out_file.write('loss,AP,AUC,SEN,SPE\n')
-            out_file.writelines([f"Mean: {r}\n" for r in metric_results.mean(axis=0)])
-            out_file.write(f"Overall Val: {overall_val_metrics}\n")
-            out_file.write(f"Overall Test: {overall_test_metrics}\n")
+            out_file.writelines([f"Mean: {r}\n" for r in metric_results.mean(axis=1)])
+            out_file.writelines([f"Fold Val {idx}: {met}\n" for idx, met in enumerate(overall_val_metrics)])
+            out_file.writelines([f"Fold Test {idx}: {met}\n" for idx, met in enumerate(overall_test_metrics)])
+            out_file.write(f"Overall Mean Val: {np.mean(overall_val_metrics, axis=0)}\n")
+            out_file.write(f"Fold Test: {final_test_metrics}\n")
         
         return metric_results, overall_test_metrics, overall_val_metrics
 
@@ -928,7 +961,9 @@ class RunModel(object):
             val_results = self.test('val', cross_idx=cross_idx, nest_idx=nest_idx)
             if self.config['lr_sched']:
                 print('sched step')
-                self.lr_sched.step(val_results[0][0])   
+                #### 0 - loss; 1 - ap; 2 - auc; 3 - sen; 4 - spe
+                self.lr_sched.step(val_results[0][2])   
+                self.lr_sched.get_last_lr()   
                 #self.lr_sched.step()   
         
             out_csv.append(f"{self.epoch},{train_results[0]},{train_results[1]},{train_results[2]},{val_results[0][0]},{val_results[0][1]},{val_results[0][2]}\n")
@@ -949,36 +984,36 @@ class RunModel(object):
         out_csv.append(f"Train: {final_train[0]}\n")
         out_csv.append(f"Val: {final_val[0]}\n")
         out_csv.append(f"Test: {final_test[0]}\n")
+
+        model_name = "best_model.pth"
+        if self.nested_cross_val:
+            model_name = f"best_model_{cross_idx}_{nest_idx}.pth"
+        elif self.cross_val:
+            model_name = f"best_model_{cross_idx}.pth"
         if self.best_model is None:
-            if self.cross_val:
-                if self.feature_extractor is not None:
-                    torch.save({'model_state_dict': copy.deepcopy(self.model.state_dict()),
-                                'extractor_state_dict': copy.deepcopy(self.feature_extractor.state_dict()),
-                                'optimizer_state_dict': copy.deepcopy(self.optimizer.state_dict()),
-                                'config'    : self.config, 
-                                'model_name': self.model.__class__.__name__}, os.path.join(self.log_dir, "last_model_{cross_idx}.pth"))
-                else:
-                    torch.save({'model_state_dict': copy.deepcopy(self.model.state_dict()),
-                                'optimizer_state_dict': copy.deepcopy(self.optimizer.state_dict()),
-                                'config'    : self.config, 
-                                'model_name': self.model.__class__.__name__}, os.path.join(self.log_dir, "last_model_{cross_idx}.pth"))
-            else:
+            if self.feature_extractor is not None:
                 torch.save({'model_state_dict': copy.deepcopy(self.model.state_dict()),
                             'extractor_state_dict': copy.deepcopy(self.feature_extractor.state_dict()),
                             'optimizer_state_dict': copy.deepcopy(self.optimizer.state_dict()),
                             'config'    : self.config, 
-                            'model_name': self.model.__class__.__name__}, os.path.join(self.log_dir, 'last_model.pth'))
-        else:
-            if self.cross_val:
-                torch.save(self.best_model, os.path.join(self.log_dir, f"best_model_{cross_idx}.pth"))
+                            'model_name': self.model.__class__.__name__}, os.path.join(self.log_dir, model_name))
             else:
-                torch.save(self.best_model, os.path.join(self.log_dir, 'best_model.pth'))
+                torch.save({'model_state_dict': copy.deepcopy(self.model.state_dict()),
+                            'optimizer_state_dict': copy.deepcopy(self.optimizer.state_dict()),
+                            'config'    : self.config, 
+                            'model_name': self.model.__class__.__name__}, os.path.join(self.log_dir, model_name))
+        else:
+            torch.save(self.best_model, os.path.join(self.log_dir, model_name))
 
         print("Done")
         out_csv.append(f"{self.config}\n")
         if self.cross_val:
-            with open(f"{self.log_dir}/results_{cross_idx}.csv", 'w') as out_file:
-                out_file.writelines(out_csv)
+            if self.nested_cross_val:
+                with open(f"{self.log_dir}/results_{cross_idx}_{nest_idx}.csv", 'w') as out_file:
+                    out_file.writelines(out_csv)
+            else:
+                with open(f"{self.log_dir}/results_{cross_idx}.csv", 'w') as out_file:
+                    out_file.writelines(out_csv)
         else:
             with open(f"{self.log_dir}/results.csv", 'w') as out_file:
                 out_file.writelines(out_csv)
