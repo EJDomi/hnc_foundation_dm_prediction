@@ -25,8 +25,8 @@ class DeepGCN(nn.Module):
             self.layers.append(layer)
            
 
-        #self.classify = Linear(hidden_channels+num_clinical, num_classes)
-        self.classify = Linear(hidden_channels, num_classes)
+        self.classify = Linear(hidden_channels+num_clinical, num_classes)
+        #self.classify = Linear(hidden_channels, num_classes)
 
         self.dropout = Dropout(dropout)
 
@@ -35,13 +35,14 @@ class DeepGCN(nn.Module):
 
         for layer in self.layers[1:]:
             x = layer(x, edge_index, edge_attr)
+            x = self.dropout(x)
 
         x = self.layers[0].act(self.layers[0].norm(x))
         x = self.dropout(x)
  
         x = global_mean_pool(x, batch)
 
-        #x = torch.cat((x, clinical), 1)
+        x = torch.cat((x, clinical), 1)
         x = self.dropout(x)
         x = self.classify(x)
 

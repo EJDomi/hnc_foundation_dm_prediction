@@ -128,14 +128,20 @@ class DatasetGeneratorImage(Dataset):
     def __init__(self, patch_dir='../../data/HNSCC/HNSCC_Nii_222_50_50_60_Crop_v2',  edge_file='../../data/HNSCC/edge_staging/edges_112723.pkl', locations_file='../../data/HNSCC/edge_staging/centered_locations_010424.pkl', clinical_data=None, version='1', pre_transform=None, config=None):
         self.config = config 
         self.patch_path = Path(patch_dir)
-        self.data_path = Path('../../data/HNSCC')
         self.edge_dict = pd.read_pickle(edge_file)
         self.locations = pd.read_pickle(locations_file)
         self.pdir = self.data_path.joinpath(f"graph_staging/{self.patch_path.name}_{edge_file.split('/')[-1].replace('.pkl', '')}_{version}")
-        self.patient_skip = [ 
-            'HNSCC-01-0271',
-            'HNSCC-01-0379',
-            ]
+        if self.config['dataset'] == 'HNSCC':
+            self.data_path = Path('../../data/HNSCC')
+            self.patient_skip = [ 
+                'HNSCC-01-0271',
+                'HNSCC-01-0379',
+                ]
+        if self.config['dataset'] == 'UTSW':
+            self.data_path = Path('../../data/UTSW_HNC')
+            self.patient_skip = []
+        else:
+            raise ValueError("need to set a dataset to use")
         self.patients = [pat.as_posix().split('/')[-1] for pat in self.patch_path.glob('*/') if '.pkl' not in str(pat)]
         self.patients = [pat for pat in self.patients if pat not in self.patient_skip]
         self.years = 2

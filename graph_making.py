@@ -678,5 +678,11 @@ def make_edges(connections, df_pat, primary):
             if [primary, gtv] in edges: continue
             print(f"28 adding edge: {[primary, gtv]}")
             edges.append([primary,gtv])
-
+    print('making entries for floating LNs')
+    for gtv in df_pat.index:
+        if 'GTVp' in gtv: continue
+        if np.any([gtv in edge[1] for edge in edges]): continue
+        print(f"Floating LN, connecting primary to {gtv}")
+        print(f"29 adding edge: {[primary, gtv]}")
+        edges.append([primary, gtv])
     return edges

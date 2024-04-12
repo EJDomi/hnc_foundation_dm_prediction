@@ -36,8 +36,8 @@ class CNN(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
         self.flatten = nn.Flatten()
-        self.avgpool = nn.AdaptiveAvgPool3d((1,1,1))
-        self.linear = nn.Linear(32+29, 256)
+        #self.avgpool = nn.AdaptiveAvgPool3d((1,1,1))
+        self.linear = nn.LazyLinear(out_features=256)
         self.classify = nn.Linear(256, 1)
         self.relu = nn.ReLU()
 
@@ -81,7 +81,7 @@ class CNN(nn.Module):
         x = self.cn12(x)
         x = self.bn12(x)
         x = self.relu(x)
-        x = self.avgpool(x)
+        #x = self.avgpool(x)
         x = self.flatten(x)
         x = torch.cat((x, clinical), 1)
          

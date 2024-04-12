@@ -375,7 +375,7 @@ class RunModel(object):
                                      [2,4,0,1],
                                      [1,3,4,0],
                                      [0,2,3,4],
-                                     [4,2,3,4]]
+                                     [4,1,2,3]]
 
             self.train_splits = [self.folds[i]+self.folds[j]+self.folds[k] for i,j,k in self.train_folds]
 
@@ -754,9 +754,12 @@ class RunModel(object):
 
         if data_to_use == 'val':
             #if iap > self.best_ap and self.epoch > 40:
-            if iauc >= self.best_auc and self.epoch > 25:
+            #if iauc >= self.best_auc and iap > self.best_ap and self.epoch > 25:
+            if metric_M >= self.best_M and isen > 0.5 and ispe > 0.5 and self.epoch > 25:
                 print(f"#################new best model saved###############")
-                self.best_auc = iauc
+                #self.best_auc = iauc
+                #self.best_ap = iap
+                self.best_M = metric_M
                 #self.best_loss = test_loss
                 out_path = os.path.join(self.log_dir, f"best_model_{self.epoch}_{test_loss:0.2f}_{metric_M:>0.2f}_{iauc:>0.2f}.pth")
                 if self.feature_extractor is None:
@@ -967,7 +970,8 @@ class RunModel(object):
                 print('sched step')
                 #### 0 - loss; 1 - ap; 2 - auc; 3 - sen; 4 - spe
                 self.lr_sched.step(val_results[0][2])   
-                self.lr_sched.get_last_lr()   
+                # for running on unix/linux
+                #self.lr_sched.get_last_lr()   
                 #self.lr_sched.step()   
         
             out_csv.append(f"{self.epoch},{train_results[0]},{train_results[1]},{train_results[2]},{val_results[0][0]},{val_results[0][1]},{val_results[0][2]}\n")
