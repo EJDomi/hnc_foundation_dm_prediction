@@ -36,14 +36,8 @@ class CNN(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
         self.flatten = nn.Flatten()
-<<<<<<< HEAD
         #self.avgpool = nn.AdaptiveAvgPool3d((1,1,1))
         self.linear = nn.LazyLinear(out_features=256)
-=======
-        self.avgpool = nn.AdaptiveAvgPool3d((1,1,1))
-        self.linear = nn.LazyLinear(out_features=256)
-        #self.linear = nn.Linear(32+29, 256)
->>>>>>> 3348542f465d421332859b5bd62ba3b1c1c8d045
         self.classify = nn.Linear(256, 1)
         self.relu = nn.ReLU()
 
