@@ -754,12 +754,11 @@ class RunModel(object):
 
         if data_to_use == 'val':
             #if iap > self.best_ap and self.epoch > 40:
-            #if iauc >= self.best_auc and iap > self.best_ap and self.epoch > 25:
-            if metric_M >= self.best_M and isen > 0.5 and ispe > 0.5 and self.epoch > 25:
+            #if iauc >= self.best_auc and self.epoch > 25:
+            if iap >= self.best_ap and self.epoch > 25:
                 print(f"#################new best model saved###############")
                 #self.best_auc = iauc
-                #self.best_ap = iap
-                self.best_M = metric_M
+                self.best_ap = iap
                 #self.best_loss = test_loss
                 out_path = os.path.join(self.log_dir, f"best_model_{self.epoch}_{test_loss:0.2f}_{metric_M:>0.2f}_{iauc:>0.2f}.pth")
                 if self.feature_extractor is None:
