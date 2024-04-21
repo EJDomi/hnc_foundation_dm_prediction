@@ -33,7 +33,7 @@ class GatedGCN(nn.Module):
         x = self.norm3(x)
         x = self.dropout(x)
        
-        x = global_mean_pool(x, batch, size=batch.unique().nelement())
+        x = global_mean_pool(x, batch)
 
         x = self.dropout(x)
         x = self.classify(x)
