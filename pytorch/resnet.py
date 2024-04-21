@@ -87,7 +87,7 @@ class Bottleneck(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, block, layers, in_channels=3, num_classes=64, dropout=0.0):
+    def __init__(self, block, layers, in_channels=3, num_classes=64, dropout=0.0, n_clinical=None):
         super(ResNet, self).__init__()
         self.expansion = 4
         self.factor = 2
@@ -95,6 +95,7 @@ class ResNet(nn.Module):
         self.bn1 = nn.BatchNorm3d(64)
         self.relu = nn.ReLU()
         self.pool = nn.MaxPool3d(kernel_size=(3,3,3), stride=2, dilation=1, padding=1)
+        self.n_clinical = n_clinical
 
         self.in_channels = 64
         self.strides = [1, 2, 2, 2]
@@ -113,7 +114,11 @@ class ResNet(nn.Module):
         self.blocks = nn.ModuleList(self.blocks)
     
         self.avgpool = nn.AdaptiveAvgPool3d((1,1,1))
-        self.classify = nn.Linear(self.channels[-1]*self.expansion, num_classes)
+
+        if self.n_clinical is not None:
+            self.classify = nn.Linear(self.channels[-1]*self.expansion + n_clinical, num_classes)
+        else:
+            self.classify = nn.Linear(self.channels[-1]*self.expansion, num_classes)
 
         self.dropout = nn.Dropout(dropout)
 
@@ -139,7 +144,7 @@ class ResNet(nn.Module):
 
 
 
-    def forward(self, x, policy=None):
+    def forward(self, x, clinical=None, policy=None):
         t = 0
 
         x = self.conv1(x)
@@ -157,11 +162,16 @@ class ResNet(nn.Module):
 
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
-        x = self.classify(x)
+        if self.n_clinical is not None:
+            x = torch.cat((x, clinical), 1)
+            x = self.classify(x)
+            x = x.squeeze()
+        else:
+            x = self.classify(x)
 
         return x
 
 
-def resnet50(num_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
-    return ResNet(blocks, [3,4,6,3], in_channels=in_channels, num_classes=num_classes, dropout=dropout)
+def resnet50(num_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck, n_clinical=None):
+    return ResNet(blocks, [3,4,6,3], in_channels=in_channels, num_classes=num_classes, dropout=dropout, n_clinical=n_clinical)
 

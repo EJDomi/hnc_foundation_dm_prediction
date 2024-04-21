@@ -138,49 +138,52 @@ class RunModel(object):
             in_channels += len(self.data[0].radiomics[0])
 
         if self.model_name == 'SimpleGCN':
-            self.model = SimpleGCN(self.data.num_node_features, 64, self.n_classes, self.config['dropout']).to(self.device)
+            self.model = SimpleGCN(self.data.num_node_features, self.config['n_hidden_channels'], self.n_classes, self.config['dropout']).to(self.device)
             print(f"{self.model_name} set")
         elif self.model_name == 'ClinicalGatedGCN':
             if self.config['data_type'] == 'image':
-                self.model = ClinicalGatedGCN(in_channels, 64, self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
+                self.model = ClinicalGatedGCN(in_channels, self.config['n_hidden_channels'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
             elif self.config['data_type'] == 'both':
-                self.model = ClinicalGatedGCN(in_channels, 64, self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
+                self.model = ClinicalGatedGCN(in_channels, self.config['n_hidden_channels'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
             else:
-                self.model = ClinicalGatedGCN(self.data.num_node_features, 64, self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
+                self.model = ClinicalGatedGCN(self.data.num_node_features, self.config['n_hidden_channels'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
 
         elif self.model_name == 'GatedGCN':
             if self.config['data_type'] == 'image':
-                self.model = GatedGCN(in_channels, 64, self.n_classes, self.edge_dim, self.config['dropout']).to(self.device)
+                self.model = GatedGCN(in_channels, self.config['n_hidden_channels'], self.n_classes, self.edge_dim, self.config['dropout']).to(self.device)
             else:
-                self.model = GatedGCN(self.data._data.num_node_features, 64, self.n_classes, self.edge_dim, self.config['dropout']).to(self.device) 
+                self.model = GatedGCN(self.data._data.num_node_features, self.config['n_hidden_channels'], self.n_classes, self.edge_dim, self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
 
         elif self.model_name == 'EXTGatedResNetGCN':
-            self.model = GatedGCN(in_channels, 64, self.n_classes, self.edge_dim, self.config['dropout']).to(self.device)
+            self.model = GatedGCN(in_channels, self.config['n_hidden_channels'], self.n_classes, self.edge_dim, self.config['dropout']).to(self.device)
 
         elif self.model_name == 'myGraphUNet':
-            self.model = myGraphUNet(in_channels, 64, self.n_classes, self.n_clinical, self.config['dropout']).to(self.device)
+            self.model = myGraphUNet(in_channels, self.config['n_hidden_channels'], self.n_classes, self.n_clinical, self.config['dropout']).to(self.device)
             print(f"{self.model_name} does not use edge_attr, setting with_edge_attr to False")
             self.with_edge_attr = False
             self.config['with_edge_attr'] = False 
             print(f"{self.model_name} set")
 
         elif self.model_name == 'DeepGCN':
-            self.model = DeepGCN(in_channels, 64, self.config['num_deep_layers'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
+            self.model = DeepGCN(in_channels, self.config['n_hidden_channels'], self.config['num_deep_layers'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
 
         elif self.model_name == 'AltDeepGCN':
             in_channels = len(self.data[0].radiomics[0]) + in_channels
-            self.model = AltDeepGCN(in_channels, 64, self.config['num_deep_layers'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
+            self.model = AltDeepGCN(in_channels, self.config['n_hidden_channels'], self.config['num_deep_layers'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
         elif self.model_name == 'CNN':
             self.model = CNN(self.config['n_channels'], self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
+        elif self.model_name == 'ResNet':
+            self.model = resnet50(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+            
           
         else:
             self.model = getattr(tgmodels, self.model_name)(in_channels=self.data.num_node_features, 
-                                                            hidden_channels=64, 
+                                                            hidden_channels=self.config['n_hidden_channels'], 
                                                             depth=3, 
                                                             #num_layers=3, 
                                                             out_channels=self.n_classes, 
@@ -574,7 +577,8 @@ class RunModel(object):
                     if self.data_type == 'both':
                         pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical, radiomics=batch.radiomics)
                     else:
-                        pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical)
+                        #pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical)
+                        pred = self.model(x=x, clinical=batch.clinical)
                 else:
                     pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch)
             loss = self.loss_fn(pred, batch.y)
@@ -701,7 +705,8 @@ class RunModel(object):
                         if self.data_type == 'both':
                             pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical, radiomics=batch.radiomics)
                         else:
-                            pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical)
+                            #pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical)
+                            pred = self.model(x=x, clinical=batch.clinical)
                     else:
                         pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch)
 

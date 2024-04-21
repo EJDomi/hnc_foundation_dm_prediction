@@ -128,6 +128,7 @@ class DatasetGeneratorImage(Dataset):
     def __init__(self, patch_dir='../../data/HNSCC/HNSCC_Nii_222_50_50_60_Crop_v2',  edge_file='../../data/HNSCC/edge_staging/edges_112723.pkl', locations_file='../../data/HNSCC/edge_staging/centered_locations_010424.pkl', clinical_data=None, version='1', pre_transform=None, config=None):
         self.config = config 
         self.patch_path = Path(patch_dir)
+        self.data_path = Path(f"../../data/{self.config['dataset']}")
         self.edge_dict = pd.read_pickle(edge_file)
         self.locations = pd.read_pickle(locations_file)
         self.pdir = self.data_path.joinpath(f"graph_staging/{self.patch_path.name}_{edge_file.split('/')[-1].replace('.pkl', '')}_{version}")
@@ -137,7 +138,7 @@ class DatasetGeneratorImage(Dataset):
                 'HNSCC-01-0271',
                 'HNSCC-01-0379',
                 ]
-        if self.config['dataset'] == 'UTSW':
+        elif self.config['dataset'] == 'UTSW':
             self.data_path = Path('../../data/UTSW_HNC')
             self.patient_skip = []
         else:
@@ -235,14 +236,13 @@ class DatasetGeneratorImage(Dataset):
             patches = list(self.patch_path.joinpath(pat).glob('image*.nii.gz'))
 
             # reorder patches glob so that GTVp will always be first entry (if it exists) (and so will always have an index of 0 in the graph)
-            if np.any(['GTVp' in str(l) for l in patches]):
-                patches_reorder = patches[-1:]
-                patches_reorder.extend(patches[:-1])
-                patches = patches_reorder
+            #if np.any(['GTVp' in str(l) for l in patches]):
+            #    patches_reorder = patches[-1:]
+            #    patches_reorder.extend(patches[:-1])
+            #    patches = patches_reorder
     
             if 'rotation' in full_pat:
                 angle = self.rng_rotate.integers(-30, high=30)
-
             patch_list = []
             for i, patch in enumerate(patches):
                 patch_name = patch.as_posix().split('/')[-1].split('_')[-1].replace('.nii.gz','')

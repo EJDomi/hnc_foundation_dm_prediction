@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from torch.nn import Linear, ReLU, Dropout
+from torch.nn import Linear, LeakyReLU, Dropout
 from torch_geometric.nn import ResGatedGraphConv, BatchNorm
 from torch_geometric.nn import global_mean_pool
 
@@ -13,7 +13,7 @@ class GatedGCN(nn.Module):
         self.conv3 = ResGatedGraphConv(hidden_channels, hidden_channels, edge_dim=edge_dim)
         self.classify = Linear(hidden_channels, num_classes)
 
-        self.relu = ReLU()
+        self.relu = LeakyReLU()
         self.norm1 = BatchNorm(in_channels=hidden_channels, allow_single_element=True)
         self.norm2 = BatchNorm(in_channels=hidden_channels, allow_single_element=True)
         self.norm3 = BatchNorm(in_channels=hidden_channels, allow_single_element=True)
@@ -33,7 +33,7 @@ class GatedGCN(nn.Module):
         x = self.norm3(x)
         x = self.dropout(x)
        
-        x = global_mean_pool(x, batch, size=batch.unique().nelement())
+        x = global_mean_pool(x, batch)
 
         x = self.dropout(x)
         x = self.classify(x)
@@ -57,7 +57,7 @@ class ClinicalGatedGCN(nn.Module):
         #self.linear = Linear(num_clinical, 64)
         #self.classify = Linear(hidden_channels, num_classes)
 
-        self.relu = ReLU()
+        self.relu = LeakyReLU()
         self.norm1 = BatchNorm(in_channels=hidden_channels, allow_single_element=True)
         self.norm2 = BatchNorm(in_channels=hidden_channels, allow_single_element=True)
         self.norm3 = BatchNorm(in_channels=hidden_channels, allow_single_element=True)
