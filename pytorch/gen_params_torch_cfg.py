@@ -3,7 +3,8 @@
 model_config = {
                 "model_name": 'ClinicalGatedGCN',
                 "extractor_name": 'ResNet',
-                "dataset": 'HNSCC',
+                "dataset_name": 'HNSCC',
+                "external_dataset_name": 'UTSW',
                 "data_type": 'radiomics',
                 "scaling_type": 'MinMax',
                 "with_edge_attr": False,

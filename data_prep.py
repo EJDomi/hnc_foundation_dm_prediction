@@ -1,4 +1,5 @@
 import os, json
+from pathlib import Path
 from datetime import datetime
 import pandas as pd
 import numpy as np
@@ -33,8 +34,9 @@ def retrieve_patients(csv_dir, dataset='HNSCC'):
     """
     csv_dir: the directory that contains all of the CSV files, namely the one with the clinical info
     """
+    # feature csv locations, genomic info is stored in the clinical info csv
+
     if dataset == 'HNSCC':
-        # feature csv locations, genomic info is stored in the clinical info csv
         base_clinical_info = pd.read_csv(os.path.join(csv_dir, 'Patient_and_Treatment_Characteristics.csv'))
 
         updated_clinical_info = pd.read_csv(os.path.join(csv_dir, 'Radiomics_Outcome_Prediction_in_OPC_ASRM_corrected.csv'))
@@ -59,19 +61,20 @@ def retrieve_patients(csv_dir, dataset='HNSCC'):
         clinical_info['has_lr'] = clinical_info['has_lr_updated'].combine_first(clinical_info['has_lr_base']) 
         
         patients = clinical_info[['survival_dm', 'has_dm', 'has_lr', 'survival_lr']]
-
+   
     if dataset == 'UTSW_HNC':
-        clinical_info = pd.read_csv(Path(csv_dir).joinpath('final_list_clinical.csv'))
+        clinical_info = pd.read_excel(Path(csv_dir).joinpath('final_list_clinical.xlsx'))
         clinical_info.set_index('IDA', inplace=True)
 
         treatment_start = pd.to_datetime(clinical_info['Treatment Start Date'], format='%m/%d/%Y')
-        
+
         recurrence_date = pd.to_datetime(clinical_info['Recurrence Date'], format='%m/%d/%Y')
-        
+
         time_to_recurrence = (recurrence_date - treatment_start)/ pd.Timedelta("365 days")
 
-        patients = time_to_recurrence
+        patients = time_to_recurrence.rename('survival_dm', inplace=True)
 
+        patients.index = patients.index.astype(str)
 
     return patients
 

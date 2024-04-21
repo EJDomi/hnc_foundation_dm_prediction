@@ -60,6 +60,7 @@ class RunModel(object):
         self.cross_val = config['cross_val']
         self.nested_cross_val = config['nested_cross_val']
         self.augment = config['augment']
+        self.external_data = None
 
         if f"{self.seed}" in self.config['clinical_mean'].keys():
             self.clinical_mean = torch.tensor(self.config['clinical_mean'][f"{self.seed}"], dtype=torch.float).to(self.device)
@@ -77,6 +78,7 @@ class RunModel(object):
  
         if self.n_classes == 1:
             self.loss_fn = nn.BCEWithLogitsLoss().to(self.device)
+            #self.loss_fn = torchvision.ops.sigmoid_focal_loss().to(self.device)
             self.acc_fn = torchmetrics.classification.BinaryAccuracy(threshold=0.5).to(self.device)
             self.auc_fn = torchmetrics.classification.BinaryAUROC().to(self.device)
             self.ap_fn = torchmetrics.classification.BinaryAveragePrecision().to(self.device)
@@ -328,12 +330,55 @@ class RunModel(object):
 
 
     def set_data(self, patch_dir='../../data/HNSCC/HNSCC_Nii_222_50_50_60_Crop_v2', radiomics_dir='../../data/HNSCC/radiomics', edge_file='../../data/HNSCC/edge_staging/edges_122823.pkl', locations_file='../../data/HNSCC/edge_staging/centered_locations_010424.pkl', clinical_data='../../data/HNSCC/clinical_features.pkl', version='v1', pre_transform=None):
+
+        if self.config['dataset_name'] == 'HNSCC':
+            patch_dir = '../../data/HNSCC/HNSCC_Nii_222_50_50_60_Crop_v2'
+            radiomics_dir = '../../data/HNSCC/radiomics'
+            edge_file = '../../data/HNSCC/edge_staging/edges_122823.pkl'
+            locations_file = '../../data/HNSCC/edge_staging/centered_locations_010424.pkl'
+            clinical_data = '../../data/HNSCC/clinical_features.pkl'
+
+        elif self.config['dataset_name'] == 'UTSW_HNC':
+            patch_dir = '../../data/UTSW_HNC/Nii_222_50_50_60_Crop'
+            radiomics_dir = None
+            edge_file = '../../data/UTSW_HNC/edge_staging/edges_utsw_040224.pkl'
+            locations_file = '../../data/UTSW_HNC/edge_staging/centered_locations_utsw_040324.pkl'
+            clinical_data = '../../data/UTSW_HNC/clinical_features_sorted_v5.pkl'
+        elif self.config['dataset_name'] == 'Combined':
+            patch_dir = '../../data/Combined/Nii_222_50_50_60_Crop'
+            radiomics_dir = None
+            edge_file = '../../data/Combined/edge_staging/edges_combined.pkl'
+            locations_file = '../../data/Combined/edge_staging/centered_locations_combined.pkl'
+            clinical_data = '../../data/Combined/clinical_features_sorted_v5.pkl'
+
         if self.data_type == 'radiomics':
             self.data = DatasetGeneratorRadiomics(patch_dir, radiomics_dir, edge_file, locations_file, clinical_data, version, pre_transform=None, config=self.config)
         elif self.data_type == 'image':
-            self.data = DatasetGeneratorImage(patch_dir, edge_file, locations_file, clinical_data, version, pre_transform=self.scaling_type, config=self.config)
+            self.data = DatasetGeneratorImage(self.config['dataset_name'], patch_dir, edge_file, locations_file, clinical_data, version, pre_transform=self.scaling_type, config=self.config)
         elif self.data_type == 'both':
             self.data = DatasetGeneratorBoth(patch_dir, radiomics_dir, edge_file, locations_file, clinical_data, version, pre_transform=self.scaling_type, config=self.config)
+
+    def set_external_test(self, patch_dir='../../data/UTSW/Nii_222_50_50_60_Crop', radiomics_dir='../../data/HNSCC/radiomics', edge_file='../../data/UTSW_HNC/edge_staging/edges_utsw_040224.pkl', locations_file='../../data/UTSW_HNC/edge_staging/centered_locations_utsw_040324.pkl', clinical_data='../../data/UTSW_HNC/clinical_features_v2.pkl', version='v1', pre_transform=None):
+
+        if self.config['external_dataset_name'] == 'HNSCC':
+            patch_dir = '../../data/HNSCC/HNSCC_Nii_222_50_50_60_Crop_v2'
+            radiomics_dir = '../../data/HNSCC/radiomics'
+            edge_file = '../../data/HNSCC/edge_staging/edges_122823.pkl'
+            locations_file = '../../data/HNSCC/edge_staging/centered_locations_010424.pkl'
+            clinical_data = '../../data/HNSCC/clinical_features_sorted_v2.pkl'
+
+        elif self.config['external_dataset_name'] == 'UTSW_HNC':
+            patch_dir = '../../data/UTSW_HNC/Nii_222_50_50_60_Crop'
+            radiomics_dir = None
+            edge_file = '../../data/UTSW_HNC/edge_staging/edges_utsw_040224.pkl'
+            locations_file = '../../data/UTSW_HNC/edge_staging/centered_locations_utsw_040324.pkl'
+            clinical_data = '../../data/UTSW_HNC/clinical_features_sorted_v5.pkl'
+
+        if self.data_type == 'image':
+            self.external_data = DatasetGeneratorImage(self.config['external_dataset_name'], patch_dir, edge_file, locations_file, clinical_data, version, pre_transform=self.scaling_type, config=self.config)
+        else:
+            print(f"input data is set as {self.data_type}, and needs to be image")
+        self.external_dataloader = DataLoader(self.external_data, batch_size=self.batch_size, shuffle=True, pin_memory=True)
 
 
     def set_scaled_data(self, patch_dir='../../data/HNSCC/HNSCC_Nii_222_50_50_60_Crop_v2', radiomics_dir='../../data/HNSCC/radiomics', edge_file='../../data/HNSCC/edge_staging/edges_122823.pkl', locations_file='../../data/HNSCC/edge_staging/centered_locations_010424.pkl', version='v1'):
@@ -561,8 +606,8 @@ class RunModel(object):
 
                 if self.config['use_clinical']:
                     batch.clinical = batch.clinical.to(self.device, dtype=torch.float)
-                    batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[cross_idx][0]) / self.clinical_mean[cross_idx][0]
-                    batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[cross_idx][1]) / self.clinical_mean[cross_idx][1]
+                    batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[cross_idx][0]) / self.clinical_std[cross_idx][0]
+                    batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[cross_idx][1]) / self.clinical_std[cross_idx][1]
                     if self.data_type == 'both':
                         pred = self.model(x=x, edge_index=batch.edge_index, edge_attr=batch.edge_attr, batch=batch.batch, clinical=batch.clinical, radiomics=batch.radiomics)
                     else:
@@ -572,8 +617,8 @@ class RunModel(object):
             else:
                 if self.config['use_clinical']:
                     batch.clinical = batch.clinical.to(self.device, dtype=torch.float)
-                    batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[cross_idx][0]) / self.clinical_mean[cross_idx][0]
-                    batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[cross_idx][1]) / self.clinical_mean[cross_idx][1]
+                    batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[cross_idx][0]) / self.clinical_std[cross_idx][0]
+                    batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[cross_idx][1]) / self.clinical_std[cross_idx][1]
                     if self.data_type == 'both':
                         pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical, radiomics=batch.radiomics)
                     else:
@@ -660,6 +705,8 @@ class RunModel(object):
                     dataloader = self.train_cross_dataloaders[cross_idx]
             else:
                 dataloader = self.train_dataloader
+        elif data_to_use == 'external':
+            dataloader = self.external_dataloader
 
         size = len(dataloader.dataset)
         num_batches = len(dataloader)
@@ -689,8 +736,8 @@ class RunModel(object):
                 if self.with_edge_attr:
                     if self.config['use_clinical']:
                         batch.clinical = batch.clinical.to(self.device, dtype=torch.float)
-                        batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[cross_idx][0]) / self.clinical_mean[cross_idx][0]
-                        batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[cross_idx][1]) / self.clinical_mean[cross_idx][1]
+                        batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[cross_idx][0]) / self.clinical_std[cross_idx][0]
+                        batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[cross_idx][1]) / self.clinical_std[cross_idx][1]
                         if self.data_type == 'both':
                             pred = self.model(x=x, edge_index=batch.edge_index, edge_attr=batch.edge_attr, batch=batch.batch, clinical=batch.clinical, radiomics=batch.radiomics)
                         else:
@@ -700,8 +747,8 @@ class RunModel(object):
                 else:
                     if self.config['use_clinical']:
                         batch.clinical = batch.clinical.to(self.device, dtype=torch.float)
-                        batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[cross_idx][0]) / self.clinical_mean[cross_idx][0]
-                        batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[cross_idx][1]) / self.clinical_mean[cross_idx][1]
+                        batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[cross_idx][0]) / self.clinical_std[cross_idx][0]
+                        batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[cross_idx][1]) / self.clinical_std[cross_idx][1]
                         if self.data_type == 'both':
                             pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical, radiomics=batch.radiomics)
                         else:
@@ -742,7 +789,7 @@ class RunModel(object):
         metric_M = 0.6*isen + 0.4*ispe
 
         test_loss /= num_batches
-        print(f"\nAvg {data_to_use.capitalize()}   Loss: {test_loss:>0.3f}; "
+        print(f"\nEpoch {data_to_use.capitalize()}   Loss: {test_loss:>0.3f}; "
               f"      {data_to_use.capitalize()} AP: {iap:>0.3f} \u00B1 {iap_err:>0.2}; "
               f"        {data_to_use.capitalize()} AUC: {iauc:>0.3f} \u00B1 {iauc_err:>0.2};"
               f"        {data_to_use.capitalize()} SEN: {isen:>0.3f}; "
@@ -783,8 +830,6 @@ class RunModel(object):
                         'loss': test_loss,}
         total_pred = torch.tensor(total_pred)
         total_target = torch.tensor(total_target)
-        if data_to_use == 'test':
-           print(total_pred) 
         self.acc_fn.reset()
         self.auc_fn.reset()
         self.ap_fn.reset()
@@ -856,8 +901,8 @@ class RunModel(object):
             out_file.writelines([f"Mean: {r}\n" for r in metric_results.mean(axis=0)])
             out_file.writelines([f"Overall Val: {met}\n" for met in overall_val_metrics])
             out_file.writelines([f"Overall Test: {met}\n" for met in overall_test_metrics])
-            out_file.write(f"Mean Val: {np.mean(overall_val_metrics, axis=0)}\n")
-            out_file.write(f"Mean Test: {np.mean(overall_test_metrics, axis=0)}\n")
+            #out_file.write(f"Mean Val: {np.mean(overall_val_metrics, axis=0)}\n")
+            #out_file.write(f"Mean Test: {np.mean(overall_test_metrics, axis=0)}\n")
         
         return metric_results, metric_results.mean(axis=0), overall_test_metrics, overall_val_metrics
             
@@ -909,7 +954,7 @@ class RunModel(object):
         final_val_targets = []
         for fold_idx in range(5):
             self.fold_probs['val'][fold_idx] = torch.tensor(self.fold_probs['val'][fold_idx]).to(self.device)
-            self.fold_targets['val'][fold_idx] = torch.tensor(self.fold_targets['val'][fold_idx], dtype=torch.long).to(self.device)
+            self.fold_targets['val'][fold_idx] = torch.tensor([int(x) for x in self.fold_targets['val'][fold_idx]], dtype=torch.long).to(self.device)
             self.fold_probs['test'][fold_idx] = torch.tensor(self.fold_probs['test'][fold_idx]).to(self.device).mean(axis=0)
             self.fold_targets['test'][fold_idx] = torch.tensor(self.fold_targets['test'][fold_idx][0], dtype=torch.long).to(self.device)
             overall_test_metrics.append([
@@ -960,7 +1005,6 @@ class RunModel(object):
         return metric_results, overall_test_metrics, overall_val_metrics
 
 
-
     def run(self, cross_idx=None, nest_idx=None):
         out_csv = []
         out_csv.append(f"epoch,train_loss,train_acc,train_auc,val_loss,val_acc,val_auc\n")
@@ -969,6 +1013,7 @@ class RunModel(object):
             print(f"Epoch {t+1}/{self.n_epochs}")
             self.epoch = t + 1
             train_results = self.train('train', cross_idx=cross_idx, nest_idx=nest_idx)
+            train_test_results = self.test('train', cross_idx=cross_idx, nest_idx=nest_idx)
             val_results = self.test('val', cross_idx=cross_idx, nest_idx=nest_idx)
             if self.config['lr_sched']:
                 print('sched step')

@@ -12,137 +12,66 @@ import torch
 from torch_geometric.data import Dataset, Data
 import torch_geometric.transforms as T
 
-
-
-class DatasetGeneratorRadiomics(Dataset):
-    """
-    generate images for pytorch dataset
-    """
-    def __init__(self, patch_dir='../../data/HNSCC/HNSCC_Nii_222_50_50_60_Crop_v2', radiomics_dir='../../data/HNSCC/radiomics',  edge_file='../../data/HNSCC/edge_staging/edges_112723.pkl', locations_file='../../data/HNSCC/edge_staging/centered_locations_010424.pkl', clinical_data=None, version='1', pre_transform=None, config=None):
-       
-        self.config = config 
-        self.patch_path = Path(patch_dir)
-        self.radiomics_path = Path(radiomics_dir)
-        self.data_path = Path('../../data/HNSCC')
-        self.edge_dict = pd.read_pickle(edge_file)
-        self.locations = pd.read_pickle(locations_file)
-        self.pdir = self.data_path.joinpath(f"graph_staging/{self.patch_path.name}_{edge_file.split('/')[-1].replace('.pkl', '')}_{version}")
-        self.patients = [pat.as_posix().split('/')[-1] for pat in self.patch_path.glob('*/')]
-        self.years = 2
-
-        if self.config['use_clinical']:
-            self.clinical_features = pd.read_pickle(clinical_data)
-        else:
-            self.clinical_features = None
-
-        labels = dp.retrieve_patients(self.data_path)
-        y = labels.loc[self.patients]
-        self.y = y['has_dm'] & (y['survival_dm'] < self.years)
-        #self.y = y['has_dm']
-
-        super(DatasetGeneratorRadiomics, self).__init__(pre_transform=pre_transform)
-
-    @property
-    def raw_paths(self):
-        return [self.raw_dir.joinpath(pat) for pat in self.patients]
-
-    @property
-    def raw_dir(self):
-        return self.patch_path
-
-    @property
-    def processed_dir(self):
-        return self.pdir 
-
-    @property
-    def processed_file_names(self):
-        return [f"graph_{idx}.pt" for idx, pat in enumerate(self.patients)]
-
-
-    def download(self):
-        pass
-
-    # function for using radiomics as node features of the graph.
-    def process(self):
-        print("processed graph files not present, starting graph production")
-        for idx, pat in enumerate(self.patients):
-            print(f"    {pat}, {idx}")
-            graph_array = []
-            edge_idx_map = {} 
- 
-            patches = pd.read_pickle(self.radiomics_path.joinpath(f"features_{pat}.pkl"))
-
-            for i, patch in enumerate(patches.keys()):
-                edge_idx_map[patch] = i
-
-                node_features = np.array(list(patches[patch].values()))
-                print(f"        {patch}")
-                graph_array.append(node_features)
-
-            graph_array = np.array(graph_array)
-            if self.pre_transform is not None:
-                graph_array = self.pre_transform.transform(graph_array)
-
-            if self.config['use_clinical']: 
-                clinical = torch.tensor(pd.to_numeric(self.clinical_features.loc[pat]).values, dtype=torch.float).unsqueeze(0)
-            else:
-                clinical = None
-            x = torch.tensor(graph_array, dtype=torch.float)
-            if len(self.edge_dict[pat]) == 0:
-                node_pos = torch.from_numpy(np.array([self.locations[pat][gtv] for gtv in patches.keys()]))
-                if self.config['with_edge_attr']:
-                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), edge_attr=torch.tensor([[0.]]), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical)
-                else:
-                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical)
-            else:
-                edges = torch.tensor(np.array([[edge_idx_map[gtv], edge_idx_map[gtv2]] for gtv, gtv2 in self.edge_dict[pat]]), dtype=torch.int64)
-                node_pos = torch.from_numpy(np.array([self.locations[pat][gtv] for gtv in patches.keys()]))
-                data = Data(x=x, edge_index=edges.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical)
-
-            if self.config['with_edge_attr'] and len(self.edge_dict[pat]) != 0:
-                sph_transform = T.Spherical()
-                norm_transform = T.Cartesian()
-                dist_transform = T.Distance()
-                #data = sph_transform(data) 
-                #data = dist_transform(data) 
-                data = norm_transform(data) 
-            
-
-            torch.save(data, self.processed_dir.joinpath(f"graph_{idx}.pt"))
-
-
-    def len(self):
-        return len(self.patients)
-
-
-    def get(self, idx):
-        data = torch.load(self.processed_dir.joinpath(f"graph_{idx}.pt"))
-        return data
-
-
+VALID_DATASETS = [
+'HNSCC',
+'UTSW_HNC',
+'Combined',
+]
 
 class DatasetGeneratorImage(Dataset):
     """
     generate images for pytorch dataset
     """
-    def __init__(self, patch_dir='../../data/HNSCC/HNSCC_Nii_222_50_50_60_Crop_v2',  edge_file='../../data/HNSCC/edge_staging/edges_112723.pkl', locations_file='../../data/HNSCC/edge_staging/centered_locations_010424.pkl', clinical_data=None, version='1', pre_transform=None, config=None):
+    def __init__(self, dataset_name='HNSCC', patch_dir='../../data/HNSCC/HNSCC_Nii_222_50_50_60_Crop_v2',  edge_file='../../data/HNSCC/edge_staging/edges_112723.pkl', locations_file='../../data/HNSCC/edge_staging/centered_locations_010424.pkl', clinical_data=None, version='1', pre_transform=None, config=None):
         self.config = config 
-        self.patch_path = Path(patch_dir)
-        self.data_path = Path(f"../../data/{self.config['dataset']}")
-        self.edge_dict = pd.read_pickle(edge_file)
-        self.locations = pd.read_pickle(locations_file)
-        self.pdir = self.data_path.joinpath(f"graph_staging/{self.patch_path.name}_{edge_file.split('/')[-1].replace('.pkl', '')}_{version}")
-        if self.config['dataset'] == 'HNSCC':
+        self.dataset_name=dataset_name
+        if self.dataset_name == 'HNSCC':
             self.data_path = Path('../../data/HNSCC')
             self.patient_skip = [ 
                 'HNSCC-01-0271',
                 'HNSCC-01-0379',
                 ]
-        elif self.config['dataset'] == 'UTSW':
+        elif self.dataset_name == 'UTSW_HNC':
             self.data_path = Path('../../data/UTSW_HNC')
-            self.patient_skip = []
+            self.patient_skip = [
+                '91352703',
+                '91486155',
+                '92910065',]
+        elif self.dataset_name == 'Combined':
+            self.data_path = Path('../../data/Combined')
+            self.patient_skip = [
+                'HNSCC-01-0271',
+                'HNSCC-01-0379',
+                '91352703',
+                '91486155',
+                '92910065',]
+        self.patch_path = Path(patch_dir)
+        self.data_path = Path(f"../../data/{self.dataset_name}")
+        self.edge_dict = pd.read_pickle(edge_file)
+        self.locations = pd.read_pickle(locations_file)
+        self.pdir = self.data_path.joinpath(f"graph_staging/{self.patch_path.name}_{edge_file.split('/')[-1].replace('.pkl', '')}_{version}")
+        if self.dataset_name == 'HNSCC':
+            self.data_path = Path('../../data/HNSCC')
+            self.patient_skip = [ 
+                'HNSCC-01-0271',
+                'HNSCC-01-0379',
+                ]
+        elif self.dataset_name == 'UTSW_HNC':
+            self.data_path = Path('../../data/UTSW_HNC')
+            self.patient_skip = [
+                '91352703',
+                '91486155',
+                '92910065',]
+        elif self.dataset_name == 'Combined':
+            self.data_path = Path('../../data/Combined')
+            self.patient_skip = [
+                'HNSCC-01-0271',
+                'HNSCC-01-0379',
+                '91352703',
+                '91486155',
+                '92910065',]
         else:
-            raise ValueError("need to set a dataset to use")
+            raise ValueError(f"need to set a dataset to use, valid ones include: {VALID_DATASETS}")
         self.patients = [pat.as_posix().split('/')[-1] for pat in self.patch_path.glob('*/') if '.pkl' not in str(pat)]
         self.patients = [pat for pat in self.patients if pat not in self.patient_skip]
         self.years = 2
@@ -154,12 +83,26 @@ class DatasetGeneratorImage(Dataset):
             self.clinical_features = pd.read_pickle(clinical_data)
         else:
             self.clinical_features = None
- 
-        labels = dp.retrieve_patients(self.data_path)
-        self.y_source = labels.loc[self.patients]
-        self.y = self.y_source['has_dm'] & (self.y_source['survival_dm'] < self.years)
-        #self.y = self.y_source['has_lr'] & (self.y_source['survival_lr'] < self.years)
-        #self.y = self.y_source['has_dm']
+
+        if self.dataset_name == 'Combined': 
+            labels_hnscc = dp.retrieve_patients(self.data_path, dataset='HNSCC')
+            labels_utsw = dp.retrieve_patients(self.data_path, dataset='UTSW_HNC')
+            y_hnscc = labels_hnscc.loc[[pat for pat in self.patients if 'HNSCC' in pat]]
+            y_hnscc = y_hnscc['has_dm'] & (y_hnscc['survival_dm'] < self.years)
+            
+            y_utsw = labels_utsw.loc[[pat for pat in self.patients if 'HNSCC' not in pat]]
+            y_utsw = y_utsw.notna() & (y_utsw < self.years) & (y_utsw > 0)
+            self.y = pd.concat([y_hnscc, y_utsw])
+        else:
+            labels = dp.retrieve_patients(self.data_path, dataset=self.dataset_name)
+        if self.dataset_name == 'HNSCC':
+            self.y_source = labels.loc[self.patients]
+            self.y = self.y_source['has_dm'] & (self.y_source['survival_dm'] < self.years)
+            #self.y = self.y_source['has_lr'] & (self.y_source['survival_lr'] < self.years)
+            #self.y = self.y_source['has_dm']
+        elif self.dataset_name == 'UTSW_HNC':
+            self.y_source = labels.loc[self.patients]
+            self.y = self.y_source.notna() & (self.y_source < self.years) & (self.y_source > 0)
 
         if self.config['augment']:
             aug_pos_pats = self.y[self.y==1]
@@ -561,3 +504,109 @@ class DatasetGeneratorBoth(Dataset):
     def apply_flip(self, arr):
         arr = np.flip(arr, axis=(0,1,2)).copy()
         return arr
+
+
+class DatasetGeneratorRadiomics(Dataset):
+    """
+    generate images for pytorch dataset
+    """
+    def __init__(self, patch_dir='../../data/HNSCC/HNSCC_Nii_222_50_50_60_Crop_v2', radiomics_dir='../../data/HNSCC/radiomics',  edge_file='../../data/HNSCC/edge_staging/edges_112723.pkl', locations_file='../../data/HNSCC/edge_staging/centered_locations_010424.pkl', clinical_data=None, version='1', pre_transform=None, config=None):
+       
+        self.config = config 
+        self.patch_path = Path(patch_dir)
+        self.radiomics_path = Path(radiomics_dir)
+        self.data_path = Path('../../data/HNSCC')
+        self.edge_dict = pd.read_pickle(edge_file)
+        self.locations = pd.read_pickle(locations_file)
+        self.pdir = self.data_path.joinpath(f"graph_staging/{self.patch_path.name}_{edge_file.split('/')[-1].replace('.pkl', '')}_{version}")
+        self.patients = [pat.as_posix().split('/')[-1] for pat in self.patch_path.glob('*/')]
+        self.years = 2
+
+        if self.config['use_clinical']:
+            self.clinical_features = pd.read_pickle(clinical_data)
+        else:
+            self.clinical_features = None
+
+        labels = dp.retrieve_patients(self.data_path)
+        y = labels.loc[self.patients]
+        self.y = y['has_dm'] & (y['survival_dm'] < self.years)
+        #self.y = y['has_dm']
+
+        super(DatasetGeneratorRadiomics, self).__init__(pre_transform=pre_transform)
+
+    @property
+    def raw_paths(self):
+        return [self.raw_dir.joinpath(pat) for pat in self.patients]
+
+    @property
+    def raw_dir(self):
+        return self.patch_path
+
+    @property
+    def processed_dir(self):
+        return self.pdir 
+
+    @property
+    def processed_file_names(self):
+        return [f"graph_{idx}.pt" for idx, pat in enumerate(self.patients)]
+
+
+    def download(self):
+        pass
+
+    # function for using radiomics as node features of the graph.
+    def process(self):
+        print("processed graph files not present, starting graph production")
+        for idx, pat in enumerate(self.patients):
+            print(f"    {pat}, {idx}")
+            graph_array = []
+            edge_idx_map = {} 
+ 
+            patches = pd.read_pickle(self.radiomics_path.joinpath(f"features_{pat}.pkl"))
+
+            for i, patch in enumerate(patches.keys()):
+                edge_idx_map[patch] = i
+
+                node_features = np.array(list(patches[patch].values()))
+                print(f"        {patch}")
+                graph_array.append(node_features)
+
+            graph_array = np.array(graph_array)
+            if self.pre_transform is not None:
+                graph_array = self.pre_transform.transform(graph_array)
+
+            if self.config['use_clinical']: 
+                clinical = torch.tensor(pd.to_numeric(self.clinical_features.loc[pat]).values, dtype=torch.float).unsqueeze(0)
+            else:
+                clinical = None
+            x = torch.tensor(graph_array, dtype=torch.float)
+            if len(self.edge_dict[pat]) == 0:
+                node_pos = torch.from_numpy(np.array([self.locations[pat][gtv] for gtv in patches.keys()]))
+                if self.config['with_edge_attr']:
+                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), edge_attr=torch.tensor([[0.]]), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical)
+                else:
+                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical)
+            else:
+                edges = torch.tensor(np.array([[edge_idx_map[gtv], edge_idx_map[gtv2]] for gtv, gtv2 in self.edge_dict[pat]]), dtype=torch.int64)
+                node_pos = torch.from_numpy(np.array([self.locations[pat][gtv] for gtv in patches.keys()]))
+                data = Data(x=x, edge_index=edges.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical)
+
+            if self.config['with_edge_attr'] and len(self.edge_dict[pat]) != 0:
+                sph_transform = T.Spherical()
+                norm_transform = T.Cartesian()
+                dist_transform = T.Distance()
+                #data = sph_transform(data) 
+                #data = dist_transform(data) 
+                data = norm_transform(data) 
+            
+
+            torch.save(data, self.processed_dir.joinpath(f"graph_{idx}.pt"))
+
+
+    def len(self):
+        return len(self.patients)
+
+
+    def get(self, idx):
+        data = torch.load(self.processed_dir.joinpath(f"graph_{idx}.pt"))
+        return data
