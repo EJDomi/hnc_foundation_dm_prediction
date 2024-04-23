@@ -116,9 +116,14 @@ class ResNet(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool3d((1,1,1))
 
         if self.n_clinical is not None:
+            #self.classify = nn.Linear(self.channels[-1]*self.expansion + n_clinical, 512)
             self.classify = nn.Linear(self.channels[-1]*self.expansion + n_clinical, num_classes)
         else:
             self.classify = nn.Linear(self.channels[-1]*self.expansion, num_classes)
+
+        #self.classify1 = nn.Linear(512, 512)
+        #self.classify2 = nn.Linear(512, 512)
+        #self.classify3 = nn.Linear(512, num_classes)
 
         self.dropout = nn.Dropout(dropout)
 
@@ -169,6 +174,10 @@ class ResNet(nn.Module):
         else:
             x = self.classify(x)
 
+        #x = self.classify1(x)
+        #x = self.classify2(x)
+        #x = self.classify3(x)
+        #x = x.squeeze()
         return x
 
 
