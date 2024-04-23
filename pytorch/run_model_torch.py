@@ -26,7 +26,7 @@ from hnc_project.pytorch.simple_gcn import SimpleGCN
 from hnc_project.pytorch.gated_gcn import GatedGCN, ClinicalGatedGCN
 from hnc_project.pytorch.deep_gcn import DeepGCN, AltDeepGCN
 from hnc_project.pytorch.graphu_gcn import myGraphUNet
-from hnc_project.pytorch.resnet import resnet50
+from hnc_project.pytorch.resnet import resnet50, resnet101
 from hnc_project.pytorch.cnn import CNN
 from hnc_project.pytorch.resnet_spottune import SpotTune
 from hnc_project.pytorch.transfer_layer_translation_cfg import layer_loop, layer_loop_downsample
@@ -207,7 +207,8 @@ class RunModel(object):
 
     def set_feature_extractor(self, transfer=None):
         if self.extractor_name == 'ResNet':
-            self.feature_extractor = resnet50(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
+            #self.feature_extractor = resnet50(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
+            self.feature_extractor = resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
             #self.feature_extractor.classify = nn.Identity() 
             if transfer == 'MedicalNet':
                 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -343,7 +344,7 @@ class RunModel(object):
             radiomics_dir = None
             edge_file = '../../data/UTSW_HNC/edge_staging/edges_utsw_040224.pkl'
             locations_file = '../../data/UTSW_HNC/edge_staging/centered_locations_utsw_040324.pkl'
-            clinical_data = '../../data/UTSW_HNC/clinical_features_sorted_v5.pkl'
+            clinical_data = '../../data/UTSW_HNC/clinical_features_sorted_v2.pkl'
         elif self.config['dataset_name'] == 'Combined':
             patch_dir = '../../data/Combined/Nii_222_50_50_60_Crop'
             radiomics_dir = None

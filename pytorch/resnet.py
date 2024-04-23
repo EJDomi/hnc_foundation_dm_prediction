@@ -175,3 +175,10 @@ class ResNet(nn.Module):
 def resnet50(num_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck, n_clinical=None):
     return ResNet(blocks, [3,4,6,3], in_channels=in_channels, num_classes=num_classes, dropout=dropout, n_clinical=n_clinical)
 
+def resnet101(num_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck, n_clinical=None):
+    return ResNet(blocks, [3,4,23,3], in_channels=in_channels, num_classes=num_classes, dropout=dropout, n_clinical=n_clinical)
+
+def resnet152(num_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck, n_clinical=None):
+    return ResNet(blocks, [3,8,36,3], in_channels=in_channels, num_classes=num_classes, dropout=dropout, n_clinical=n_clinical)
+def resnet200(num_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck, n_clinical=None):
+    return ResNet(blocks, [3,24,36,3], in_channels=in_channels, num_classes=num_classes, dropout=dropout, n_clinical=n_clinical)
