@@ -36,6 +36,8 @@ model_config = {
                 "augments": ['rotation'],
                 "n_rotations": 10,
                 "transfer": None,
+                "max_nodes": { 'HNSCC': 15,
+                             },
                 "clinical_mean": {'Win42': [[58.1292, 68.8017],
                                          [58.4310, 68.6708],
                                          [58.1092, 68.4468],

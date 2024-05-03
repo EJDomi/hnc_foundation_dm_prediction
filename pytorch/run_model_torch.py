@@ -27,6 +27,7 @@ from hnc_project.pytorch.gated_gcn import GatedGCN, ClinicalGatedGCN
 from hnc_project.pytorch.deep_gcn import DeepGCN, AltDeepGCN
 from hnc_project.pytorch.graphu_gcn import myGraphUNet
 from hnc_project.pytorch.resnet import resnet50, resnet101, resnet152, resnet200
+import hnc_project.pytorch.graphag_resnet as ga
 from hnc_project.pytorch.cnn import CNN
 from hnc_project.pytorch.resnet_spottune import SpotTune
 from hnc_project.pytorch.transfer_layer_translation_cfg import layer_loop, layer_loop_downsample
@@ -182,6 +183,8 @@ class RunModel(object):
         elif self.model_name == 'ResNet':
             #self.model = resnet50(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
             self.model = resnet101(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+        elif self.model_name == 'GraphAgResNet':
+            self.model = ga.resnet50(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
             
           
         else:
@@ -627,7 +630,7 @@ class RunModel(object):
                         pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical, radiomics=batch.radiomics)
                     else:
                         #pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical)
-                        pred = self.model(x=x, clinical=batch.clinical)
+                        pred = self.model(x=x, batch=batch.batch, clinical=batch.clinical)
                 else:
                     pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch)
             loss = self.loss_fn(pred, batch.y)
@@ -757,7 +760,7 @@ class RunModel(object):
                             pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical, radiomics=batch.radiomics)
                         else:
                             #pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical)
-                            pred = self.model(x=x, clinical=batch.clinical)
+                            pred = self.model(x=x, batch=batch.batch, clinical=batch.clinical)
                     else:
                         pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch)
 

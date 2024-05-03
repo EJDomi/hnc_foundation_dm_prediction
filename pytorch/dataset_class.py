@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 from pathlib import Path
+import random
 import numpy as np
 import pandas as pd
 import SimpleITK as sitk
@@ -72,7 +73,7 @@ class DatasetGeneratorImage(Dataset):
                 '92910065',]
         else:
             raise ValueError(f"need to set a dataset to use, valid ones include: {VALID_DATASETS}")
-        self.patients = [pat.as_posix().split('/')[-1] for pat in self.patch_path.glob('*/') if '.pkl' not in str(pat)]
+        self.patients = [pat.as_posix().split('/')[-1] for pat in sorted(self.patch_path.glob('*/')) if '.pkl' not in str(pat)]
         self.patients = [pat for pat in self.patients if pat not in self.patient_skip]
         self.years = 2
 
@@ -178,6 +179,7 @@ class DatasetGeneratorImage(Dataset):
             edge_idx_map = {}
             patches = list(self.patch_path.joinpath(pat).glob('image*.nii.gz'))
             #patches = list(sorted(self.patch_path.joinpath(pat).glob('image*.nii.gz')))
+
             # reorder patches glob so that GTVp will always be first entry (if it exists) (and so will always have an index of 0 in the graph)
             #if np.any(['GTVp' in str(l) for l in patches]):
             #    patches_reorder = patches[-1:]
@@ -214,8 +216,7 @@ class DatasetGeneratorImage(Dataset):
                     else:
                         raise Exception(f"pre_transform is set to {self.pre_transform}, but it is not implemented")
                 else:
-                    patch_scaled=patch_array
-
+                    patch_scaled = patch_array
 
                 if 'rotation' in full_pat:
                     patch_scaled = self.apply_rotation(patch_scaled, angle)
@@ -238,8 +239,14 @@ class DatasetGeneratorImage(Dataset):
 
             graph_array = np.array(graph_array)
 
+            if 'ResNet' in self.config['model_name']:
+                
+                shape = graph_array.shape
+                graph_array = np.pad(graph_array, ((0, 15-shape[0]), (0,0),(0,0),(0,0),(0,0)), 'constant', constant_values=0.)
+
             graph_array = torch.tensor(graph_array, dtype=torch.float)
 
+            
             #graph_array = torch.permute(graph_array, (3, 0, 1, 2))
             node_pos = torch.from_numpy(np.array([self.locations[pat][gtv] for gtv in patch_list]))
             if self.config['use_clinical']: 
