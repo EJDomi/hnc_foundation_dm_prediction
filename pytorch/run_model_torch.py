@@ -26,7 +26,7 @@ from hnc_project.pytorch.simple_gcn import SimpleGCN
 from hnc_project.pytorch.gated_gcn import GatedGCN, ClinicalGatedGCN
 from hnc_project.pytorch.deep_gcn import DeepGCN, AltDeepGCN
 from hnc_project.pytorch.graphu_gcn import myGraphUNet
-from hnc_project.pytorch.resnet import resnet50, resnet101
+from hnc_project.pytorch.resnet import resnet50, resnet101, resnet152, resnet200
 from hnc_project.pytorch.cnn import CNN
 from hnc_project.pytorch.resnet_spottune import SpotTune
 from hnc_project.pytorch.transfer_layer_translation_cfg import layer_loop, layer_loop_downsample
@@ -180,7 +180,8 @@ class RunModel(object):
             self.model = CNN(self.config['n_channels'], self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
         elif self.model_name == 'ResNet':
-            self.model = resnet50(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+            #self.model = resnet50(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+            self.model = resnet101(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
             
           
         else:
@@ -207,8 +208,10 @@ class RunModel(object):
 
     def set_feature_extractor(self, transfer=None):
         if self.extractor_name == 'ResNet':
-            #self.feature_extractor = resnet50(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
-            self.feature_extractor = resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
+            #self.feature_extractor = resnet50(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
+            self.feature_extractor = resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
+            #self.feature_extractor = resnet152(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
+            #self.feature_extractor = resnet200(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
             #self.feature_extractor.classify = nn.Identity() 
             if transfer == 'MedicalNet':
                 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -337,20 +340,20 @@ class RunModel(object):
             radiomics_dir = '../../data/HNSCC/radiomics'
             edge_file = '../../data/HNSCC/edge_staging/edges_122823.pkl'
             locations_file = '../../data/HNSCC/edge_staging/centered_locations_010424.pkl'
-            clinical_data = '../../data/HNSCC/clinical_features.pkl'
+            clinical_data = f"../../data/HNSCC/{self.config['clinical_data']}"
 
         elif self.config['dataset_name'] == 'UTSW_HNC':
             patch_dir = '../../data/UTSW_HNC/Nii_222_50_50_60_Crop'
             radiomics_dir = None
             edge_file = '../../data/UTSW_HNC/edge_staging/edges_utsw_040224.pkl'
             locations_file = '../../data/UTSW_HNC/edge_staging/centered_locations_utsw_040324.pkl'
-            clinical_data = '../../data/UTSW_HNC/clinical_features_sorted_v2.pkl'
+            clinical_data = f"../../data/UTSW_HNC/{self.config['clinical_data']}"
         elif self.config['dataset_name'] == 'Combined':
             patch_dir = '../../data/Combined/Nii_222_50_50_60_Crop'
             radiomics_dir = None
             edge_file = '../../data/Combined/edge_staging/edges_combined.pkl'
             locations_file = '../../data/Combined/edge_staging/centered_locations_combined.pkl'
-            clinical_data = '../../data/Combined/clinical_features_sorted_v5.pkl'
+            clinical_data = f"../../data/Combined/{self.config['clinical_data']}"
 
         if self.data_type == 'radiomics':
             self.data = DatasetGeneratorRadiomics(patch_dir, radiomics_dir, edge_file, locations_file, clinical_data, version, pre_transform=None, config=self.config)
@@ -1014,7 +1017,7 @@ class RunModel(object):
             print(f"Epoch {t+1}/{self.n_epochs}")
             self.epoch = t + 1
             train_results = self.train('train', cross_idx=cross_idx, nest_idx=nest_idx)
-            train_test_results = self.test('train', cross_idx=cross_idx, nest_idx=nest_idx)
+            #train_test_results = self.test('train', cross_idx=cross_idx, nest_idx=nest_idx)
             val_results = self.test('val', cross_idx=cross_idx, nest_idx=nest_idx)
             if self.config['lr_sched']:
                 print('sched step')

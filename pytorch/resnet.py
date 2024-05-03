@@ -177,7 +177,7 @@ class ResNet(nn.Module):
         #x = self.classify1(x)
         #x = self.classify2(x)
         #x = self.classify3(x)
-        #x = x.squeeze()
+        x = x.squeeze()
         return x
 
 

@@ -177,7 +177,7 @@ class DatasetGeneratorImage(Dataset):
             graph_array = []
             edge_idx_map = {}
             patches = list(self.patch_path.joinpath(pat).glob('image*.nii.gz'))
-
+            #patches = list(sorted(self.patch_path.joinpath(pat).glob('image*.nii.gz')))
             # reorder patches glob so that GTVp will always be first entry (if it exists) (and so will always have an index of 0 in the graph)
             #if np.any(['GTVp' in str(l) for l in patches]):
             #    patches_reorder = patches[-1:]
@@ -210,6 +210,11 @@ class DatasetGeneratorImage(Dataset):
                     if self.pre_transform == 'MinMax':
                         patch_std = (patch_array - patch_array.min()) / (patch_array.max() - patch_array.min())
                         patch_scaled = patch_std * (1 - (-1)) + (-1)
+                        #patch_scaled = np.where(struct_array, patch_scaled, 0)
+                    else:
+                        raise Exception(f"pre_transform is set to {self.pre_transform}, but it is not implemented")
+                else:
+                    patch_scaled=patch_array
 
 
                 if 'rotation' in full_pat:
@@ -249,9 +254,16 @@ class DatasetGeneratorImage(Dataset):
                     data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=pat)
             else:
                 edges = torch.tensor([[edge_idx_map[gtv], edge_idx_map[gtv2]] for gtv, gtv2 in self.edge_dict[pat] if gtv in patch_list and gtv2 in patch_list], dtype=torch.int64)
+                #full_edges = []
+                #for gtv in patch_list:
+                #    for gtv2 in patch_list:
+                #        if gtv == gtv2: continue
+                #        full_edges.append([edge_idx_map[gtv], edge_idx_map[gtv2]])
+                #full_edges_ten = torch.tensor(full_edges, dtype=torch.int64)
                 #edges_op = torch.tensor([[edge_idx_map[gtv2], edge_idx_map[gtv]] for gtv, gtv2 in self.edge_dict[pat]], dtype=torch.int64)
                 #edges = torch.cat((edges, edges_op), 0)
                 data = Data(x=graph_array, edge_index=edges.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=pat)
+                #data = Data(x=graph_array, edge_index=full_edges_ten.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=pat)
 
 
             if self.config['with_edge_attr'] and len(patch_list) != 1:
