@@ -28,6 +28,7 @@ from hnc_project.pytorch.deep_gcn import DeepGCN, AltDeepGCN
 from hnc_project.pytorch.graphu_gcn import myGraphUNet
 from hnc_project.pytorch.resnet import resnet50, resnet101
 import hnc_project.pytorch.graphag_resnet as ga
+import hnc_project.pytorch.resnet_2d as res2d
 from hnc_project.pytorch.cnn import CNN
 from hnc_project.pytorch.resnet_spottune import SpotTune
 from hnc_project.pytorch.transfer_layer_translation_cfg import layer_loop, layer_loop_downsample
@@ -126,7 +127,7 @@ class RunModel(object):
         sets and assigns GNN model to self.model
         make sure to assign dataset before calling set_model
         """
-        if self.feature_extractor is None and self.config['data_type'] == 'image' and 'EXT' in self.model_name:
+        if self.feature_extractor is None and 'image' in self.config['data_type'] and 'EXT' in self.model_name:
             raise ValueError(f"Need to set feature extractor before initializing model")
 
         if self.feature_extractor is not None:
@@ -144,7 +145,7 @@ class RunModel(object):
             self.model = SimpleGCN(self.data.num_node_features, self.config['n_hidden_channels'], self.n_classes, self.config['dropout']).to(self.device)
             print(f"{self.model_name} set")
         elif self.model_name == 'ClinicalGatedGCN':
-            if self.config['data_type'] == 'image':
+            if 'image' in self.config['data_type']:
                 self.model = ClinicalGatedGCN(in_channels, self.config['n_hidden_channels'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
             elif self.config['data_type'] == 'both':
                 self.model = ClinicalGatedGCN(in_channels, self.config['n_hidden_channels'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
@@ -153,7 +154,7 @@ class RunModel(object):
             print(f"{self.model_name} set")
 
         elif self.model_name == 'GatedGCN':
-            if self.config['data_type'] == 'image':
+            if 'image' in self.config['data_type']:
                 self.model = GatedGCN(in_channels, self.config['n_hidden_channels'], self.n_classes, self.edge_dim, self.config['dropout']).to(self.device)
             else:
                 self.model = GatedGCN(self.data._data.num_node_features, self.config['n_hidden_channels'], self.n_classes, self.edge_dim, self.config['dropout']).to(self.device) 
@@ -210,8 +211,11 @@ class RunModel(object):
 
     def set_feature_extractor(self, transfer=None):
         if self.extractor_name == 'ResNet':
-            #self.feature_extractor = resnet50(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
-            self.feature_extractor = resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
+            if '2d' in self.config['data_type']:
+                self.feature_extractor = res2d.resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
+            else:
+                #self.feature_extractor = resnet50(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
+                self.feature_extractor = resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
             #self.feature_extractor.classify = nn.Identity() 
             if transfer == 'MedicalNet':
                 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -358,7 +362,7 @@ class RunModel(object):
 
         if self.data_type == 'radiomics':
             self.data = DatasetGeneratorRadiomics(patch_dir, radiomics_dir, edge_file, locations_file, clinical_data, version, pre_transform=None, config=self.config)
-        elif self.data_type == 'image':
+        elif 'image' in self.data_type:
             self.data = DatasetGeneratorImage(self.config['dataset_name'], patch_dir, edge_file, locations_file, clinical_data, version, pre_transform=self.scaling_type, config=self.config)
         elif self.data_type == 'both':
             self.data = DatasetGeneratorBoth(patch_dir, radiomics_dir, edge_file, locations_file, clinical_data, version, pre_transform=self.scaling_type, config=self.config)
@@ -379,7 +383,7 @@ class RunModel(object):
             locations_file = '../../data/UTSW_HNC/edge_staging/centered_locations_utsw_040324.pkl'
             clinical_data = '../../data/UTSW_HNC/clinical_features_sorted_v5.pkl'
 
-        if self.data_type == 'image':
+        if 'image' in self.data_type:
             self.external_data = DatasetGeneratorImage(self.config['external_dataset_name'], patch_dir, edge_file, locations_file, clinical_data, version, pre_transform=self.scaling_type, config=self.config)
         else:
             print(f"input data is set as {self.data_type}, and needs to be image")
@@ -1018,7 +1022,7 @@ class RunModel(object):
             print(f"Epoch {t+1}/{self.n_epochs}")
             self.epoch = t + 1
             train_results = self.train('train', cross_idx=cross_idx, nest_idx=nest_idx)
-            train_test_results = self.test('train', cross_idx=cross_idx, nest_idx=nest_idx)
+            #train_test_results = self.test('train', cross_idx=cross_idx, nest_idx=nest_idx)
             val_results = self.test('val', cross_idx=cross_idx, nest_idx=nest_idx)
             if self.config['lr_sched']:
                 print('sched step')

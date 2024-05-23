@@ -3,6 +3,9 @@ from pathlib import Path
 import random
 import numpy as np
 import pandas as pd
+
+from scipy.ndimage import center_of_mass
+
 import SimpleITK as sitk
 from sklearn.preprocessing import MinMaxScaler
 from skimage.transform import rotate
@@ -177,8 +180,8 @@ class DatasetGeneratorImage(Dataset):
             print(f"    {full_pat}, {idx}")
             graph_array = []
             edge_idx_map = {}
-            patches = list(self.patch_path.joinpath(pat).glob('image*.nii.gz'))
-            #patches = list(sorted(self.patch_path.joinpath(pat).glob('image*.nii.gz')))
+            #patches = list(self.patch_path.joinpath(pat).glob('image*.nii.gz'))
+            patches = list(reversed(sorted(self.patch_path.joinpath(pat).glob('image*.nii.gz'))))
 
             # reorder patches glob so that GTVp will always be first entry (if it exists) (and so will always have an index of 0 in the graph)
             #if np.any(['GTVp' in str(l) for l in patches]):
@@ -206,7 +209,12 @@ class DatasetGeneratorImage(Dataset):
                 patch_array = sitk.GetArrayFromImage(patch_image)
                 struct_array = sitk.GetArrayFromImage(patch_struct)
 
-                patch_array = np.where(struct_array, patch_array, 0)
+                #patch_array = np.where(struct_array, patch_array, 0)
+
+                if '2d' in self.config['data_type']:
+                    com = center_of_mass(struct_array)
+                    patch_array = patch_array[int(com[0])]
+                    struct_array = struct_array[int(com[0])]
 
                 if self.pre_transform is not None:
                     if self.pre_transform == 'MinMax':
@@ -229,13 +237,13 @@ class DatasetGeneratorImage(Dataset):
                     patch_scaled = self.apply_flip(patch_scaled)
                     struct_array = self.apply_flip(struct_array)
 
-                #node_image = np.stack((patch_scaled, struct_array))
+                node_image = np.stack((patch_scaled, struct_array))
                 #node_image = np.moveaxis(node_image, [0, 1, 2, 3], [-1, -4, -3, -2]) 
                 print(f"        {patch_name}")
                 #print(f"        {np.shape(node_image)}")
                 print(f"        {np.shape(patch_scaled)}")
-                #graph_array.append(node_image)
-                graph_array.append(np.expand_dims(patch_scaled, 0))
+                graph_array.append(node_image)
+                #graph_array.append(np.expand_dims(patch_scaled, 0))
 
             graph_array = np.array(graph_array)
 

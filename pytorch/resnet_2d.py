@@ -10,15 +10,15 @@ class BasicBlock(nn.Module):
         self.stride = stride
         self.dilation = dilation
         if stride > 1 or dilation > 1:
-            self.downsample = nn.Conv3d(in_channels, channels, kernel_size=1, stride=stride, bias=False)
-            self.bn0 = nn.BatchNorm3d(channels)
-            self.conv1 = nn.Conv3d(in_channels, channels, kernel_size=(3,3,3), stride=stride, dilation=dilation, padding=dilation, bias=False)
+            self.downsample = nn.Conv2d(in_channels, channels, kernel_size=1, stride=stride, bias=False)
+            self.bn0 = nn.BatchNorm2d(channels)
+            self.conv1 = nn.Conv2d(in_channels, channels, kernel_size=(3,3), stride=stride, dilation=dilation, padding=dilation, bias=False)
         else:
-            self.conv1 = nn.Conv3d(in_channels, channels, kernel_size=(3,3,3), stride=stride, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm3d(channels)
-        self.relu = nn.LeakyReLU()
-        self.conv2 = nn.Conv3d(channels, channels, kernel_size=(3,3,3), stride=1, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm3d(channels)
+            self.conv1 = nn.Conv2d(in_channels, channels, kernel_size=(3,3), stride=stride, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(channels)
+        self.relu = nn.ReLU()
+        self.conv2 = nn.Conv2d(channels, channels, kernel_size=(3,3), stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(channels)
 
     def forward(self, x):
         residual = x
@@ -45,23 +45,23 @@ class Bottleneck(nn.Module):
         self.stride = stride
         self.dilation = dilation
         if stride > 1:
-            self.downsample = nn.Conv3d(in_channels, channels*self.expansion, kernel_size=1, stride=stride, bias=False)
-            self.bn0 = nn.BatchNorm3d(channels*self.expansion)
+            self.downsample = nn.Conv2d(in_channels, channels*self.expansion, kernel_size=1, stride=stride, bias=False)
+            self.bn0 = nn.BatchNorm2d(channels*self.expansion)
         elif in_channels != channels*self.expansion:
-            self.downsample = nn.Conv3d(in_channels, channels*self.expansion, kernel_size=1, stride=1, bias=False)
-            self.bn0 = nn.BatchNorm3d(channels*self.expansion)
+            self.downsample = nn.Conv2d(in_channels, channels*self.expansion, kernel_size=1, stride=1, bias=False)
+            self.bn0 = nn.BatchNorm2d(channels*self.expansion)
         else:
             self.downsample = None
-        self.conv1 = nn.Conv3d(in_channels, channels, kernel_size=(1,1,1), stride=1, bias=False)
-        self.bn1 = nn.BatchNorm3d(channels)
-        self.relu = nn.LeakyReLU()
+        self.conv1 = nn.Conv2d(in_channels, channels, kernel_size=(1,1), stride=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(channels)
+        self.relu = nn.ReLU()
         if stride > 1 or dilation > 1:
-            self.conv2 = nn.Conv3d(channels, channels, kernel_size=(3,3,3), stride=stride, padding=dilation, dilation=dilation, bias=False)
+            self.conv2 = nn.Conv2d(channels, channels, kernel_size=(3,3), stride=stride, padding=dilation, dilation=dilation, bias=False)
         else:
-            self.conv2 = nn.Conv3d(channels, channels, kernel_size=(3,3,3), stride=1, padding=1, dilation=dilation, bias=False)
-        self.bn2 = nn.BatchNorm3d(channels)
-        self.conv3 = nn.Conv3d(channels, channels*self.expansion, kernel_size=(1,1,1), stride=1, bias=False)
-        self.bn3 = nn.BatchNorm3d(channels*self.expansion)
+            self.conv2 = nn.Conv2d(channels, channels, kernel_size=(3,3), stride=1, padding=1, dilation=dilation, bias=False)
+        self.bn2 = nn.BatchNorm2d(channels)
+        self.conv3 = nn.Conv2d(channels, channels*self.expansion, kernel_size=(1,1), stride=1, bias=False)
+        self.bn3 = nn.BatchNorm2d(channels*self.expansion)
 
     def forward(self, x):
         residual = x
@@ -91,10 +91,10 @@ class ResNet(nn.Module):
         super(ResNet, self).__init__()
         self.expansion = 4
         self.factor = 2
-        self.conv1 = nn.Conv3d(in_channels, 64, kernel_size=(7,7,7), stride=2, padding=3, bias=False)
-        self.bn1 = nn.BatchNorm3d(64)
-        self.relu = nn.LeakyReLU()
-        self.pool = nn.MaxPool3d(kernel_size=(3,3,3), stride=2, dilation=1, padding=1)
+        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=(7,7), stride=2, padding=3, bias=False)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.relu = nn.ReLU()
+        self.pool = nn.MaxPool2d(kernel_size=(3,3), stride=2, dilation=1, padding=1)
         self.n_clinical = n_clinical
 
         self.in_channels = 64
@@ -113,7 +113,7 @@ class ResNet(nn.Module):
             self.blocks.append(nn.ModuleList(blocks))
         self.blocks = nn.ModuleList(self.blocks)
     
-        self.avgpool = nn.AdaptiveAvgPool3d((1,1,1))
+        self.avgpool = nn.AdaptiveAvgPool2d((1,1))
 
         if self.n_clinical is not None:
             self.classify = nn.Linear(self.channels[-1]*self.expansion + n_clinical, num_classes)
@@ -123,10 +123,10 @@ class ResNet(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
         for m in self.modules():
-            if isinstance(m, nn.Conv3d):
+            if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.kernel_size[1] * m.out_channels
                 m.weight.data.normal_(0, math.sqrt(2./n))
-            elif isinstance(m, nn.BatchNorm3d):
+            elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
 
