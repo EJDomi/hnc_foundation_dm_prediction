@@ -20,18 +20,19 @@ class GatedGCN(nn.Module):
         self.dropout = Dropout(dropout)
 
     def forward(self, x, edge_index, edge_attr, batch):
+        x = self.dropout(x)
         x = self.conv1(x=x, edge_index=edge_index, edge_attr=edge_attr)
         x = self.relu(x)
         x = self.norm1(x)
-        x = self.dropout(x)
+        #x = self.dropout(x)
         x = self.conv2(x, edge_index, edge_attr)
         x = self.relu(x)
         x = self.norm2(x)
-        x = self.dropout(x)
+        #x = self.dropout(x)
         x = self.conv3(x, edge_index, edge_attr)
         x = self.relu(x)
         x = self.norm3(x)
-        x = self.dropout(x)
+        #x = self.dropout(x)
        
         x = global_mean_pool(x, batch)
 

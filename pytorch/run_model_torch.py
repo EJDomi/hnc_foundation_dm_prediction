@@ -5,6 +5,8 @@ from datetime import datetime
 from collections import OrderedDict
 import time
 import numpy as np
+import pandas as pd
+import pickle
 
 from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.preprocessing import StandardScaler
@@ -26,7 +28,7 @@ from hnc_project.pytorch.simple_gcn import SimpleGCN
 from hnc_project.pytorch.gated_gcn import GatedGCN, ClinicalGatedGCN
 from hnc_project.pytorch.deep_gcn import DeepGCN, AltDeepGCN
 from hnc_project.pytorch.graphu_gcn import myGraphUNet
-from hnc_project.pytorch.resnet import resnet50, resnet101
+from hnc_project.pytorch.resnet import resnet50, resnet101, resnet152, resnet200
 import hnc_project.pytorch.graphag_resnet as ga
 import hnc_project.pytorch.resnet_2d as res2d
 from hnc_project.pytorch.cnn import CNN
@@ -182,9 +184,10 @@ class RunModel(object):
             self.model = CNN(self.config['n_channels'], self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
         elif self.model_name == 'ResNet':
-            self.model = resnet50(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+            #self.model = resnet50(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+            self.model = resnet101(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
         elif self.model_name == 'GraphAgResNet':
-            self.model = ga.resnet50(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+            self.model = ga.resnet101(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
             
           
         else:
@@ -212,14 +215,15 @@ class RunModel(object):
     def set_feature_extractor(self, transfer=None):
         if self.extractor_name == 'ResNet':
             if '2d' in self.config['data_type']:
-                self.feature_extractor = res2d.resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
+                self.feature_extractor = res2d.resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
             else:
-                #self.feature_extractor = resnet50(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
-                self.feature_extractor = resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
+                self.feature_extractor = resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
+                #self.feature_extractor = resnet152(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
+                #self.feature_extractor = resnet200(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
             #self.feature_extractor.classify = nn.Identity() 
             if transfer == 'MedicalNet':
                 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-                initial_state = torch.load('./models/resnet_50.pth', map_location=self.device)['state_dict']
+                initial_state = torch.load('./models/resnet_101.pth', map_location=self.device)['state_dict']
                 fixed_state = {}
                 for k, v in initial_state.items():
                     if 'layer' in k:
@@ -239,6 +243,8 @@ class RunModel(object):
 
                 self.feature_extractor.load_state_dict(fixed_state, strict=False)
                 for name, p in self.feature_extractor.named_parameters():
+                    if 'classify' in name: continue
+                    #if 'blocks.3' in name: continue
                     p.requires_grad = False
 
             if transfer == 'ImageNet':
@@ -344,21 +350,20 @@ class RunModel(object):
             radiomics_dir = '../../data/HNSCC/radiomics'
             edge_file = '../../data/HNSCC/edge_staging/edges_122823.pkl'
             locations_file = '../../data/HNSCC/edge_staging/centered_locations_010424.pkl'
-            clinical_data = '../../data/HNSCC/clinical_features.pkl'
-            #clinical_data = '../../data/HNSCC/clinical_features_sorted_v5.pkl'
+            clinical_data = f"../../data/HNSCC/{self.config['clinical_data']}"
 
         elif self.config['dataset_name'] == 'UTSW_HNC':
             patch_dir = '../../data/UTSW_HNC/Nii_222_50_50_60_Crop'
             radiomics_dir = None
             edge_file = '../../data/UTSW_HNC/edge_staging/edges_utsw_040224.pkl'
             locations_file = '../../data/UTSW_HNC/edge_staging/centered_locations_utsw_040324.pkl'
-            clinical_data = '../../data/UTSW_HNC/clinical_features_sorted_v5.pkl'
+            clinical_data = f"../../data/UTSW_HNC/{self.config['clinical_data']}"
         elif self.config['dataset_name'] == 'Combined':
             patch_dir = '../../data/Combined/Nii_222_50_50_60_Crop'
             radiomics_dir = None
             edge_file = '../../data/Combined/edge_staging/edges_combined.pkl'
             locations_file = '../../data/Combined/edge_staging/centered_locations_combined.pkl'
-            clinical_data = '../../data/Combined/clinical_features_sorted_v5.pkl'
+            clinical_data = f"../../data/Combined/{self.config['clinical_data']}"
 
         if self.data_type == 'radiomics':
             self.data = DatasetGeneratorRadiomics(patch_dir, radiomics_dir, edge_file, locations_file, clinical_data, version, pre_transform=None, config=self.config)
@@ -454,7 +459,12 @@ class RunModel(object):
             for split in self.train_splits:
                 self.class_weights.append([len(self.data.y.values[split][self.data.y.values[split]==0]) / np.sum(self.data.y.values[split])])
 
-            
+            self.fold_df = pd.DataFrame(self.data.y).copy(deep=True)
+            self.train_fold_df = pd.DataFrame(self.data.y_source).copy(deep=True)
+            for idx in range(5):
+                self.fold_df[f"train_fold_{idx}"] = [True if pat in self.data.y.iloc[self.train_splits[idx]].index else False for pat in self.fold_df.index] 
+                self.train_fold_df[f"fold_{idx}"] = [True if pat in self.data.y_source.iloc[self.folds[idx]].index else False for pat in self.train_fold_df.index]              
+
             self.nested_train_splits = [[self.folds[i]+self.folds[j]+self.folds[k] for i,j,k in nest] for nest in self.nested_train_folds]
             self.nested_val_splits = [[self.folds[i] for i in nest] for nest in self.nested_val_folds] 
             self.nested_aug_splits = []
@@ -474,6 +484,8 @@ class RunModel(object):
                 for idx in range(len(self.nested_train_splits)):
                     for jdx in range(len(self.nested_train_splits[idx])):
                         self.nested_train_splits[idx][jdx].extend([self.data.y.index.get_loc(pat) for pat in self.nested_aug_splits[idx][jdx]])   
+
+
             
         else:
             if self.data_type == 'outside':
@@ -815,11 +827,13 @@ class RunModel(object):
 
         if data_to_use == 'val':
             #if iap > self.best_ap and self.epoch > 40:
-            #if iauc >= self.best_auc and self.epoch > 25:
-            if iap >= self.best_ap and self.epoch > 25:
+            if (iauc >= self.best_auc or iap >= self.best_ap) and self.epoch > 25:
+            #if iap >= self.best_ap and self.epoch > 25:
                 print(f"#################new best model saved###############")
-                #self.best_auc = iauc
-                self.best_ap = iap
+                if iauc >= self.best_auc:
+                    self.best_auc = iauc
+                if iap >= self.best_ap:
+                    self.best_ap = iap
                 #self.best_loss = test_loss
                 out_path = os.path.join(self.log_dir, f"best_model_{self.epoch}_{test_loss:0.2f}_{metric_M:>0.2f}_{iauc:>0.2f}.pth")
                 if self.feature_extractor is None:
@@ -1010,7 +1024,15 @@ class RunModel(object):
             out_file.writelines([f"Fold Test {idx}: {met}\n" for idx, met in enumerate(overall_test_metrics)])
             out_file.write(f"Overall Mean Val: {np.mean(overall_val_metrics, axis=0)}\n")
             out_file.write(f"Fold Test: {final_test_metrics}\n")
-        
+      
+        self.fold_df.to_csv(f"{self.log_dir}/folds.csv")
+        self.train_fold_df.to_csv(f"{self.log_dir}/train_folds.csv")
+
+        with open(f"{self.log_dir}/model_probabilities.pkl", 'wb') as f:
+            pickle.dump(self.fold_probs, f)
+            pickle.dump(self.fold_targets, f)
+            f.close()
+
         return metric_results, overall_test_metrics, overall_val_metrics
 
 

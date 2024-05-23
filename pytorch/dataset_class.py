@@ -40,7 +40,8 @@ class DatasetGeneratorImage(Dataset):
             self.patient_skip = [
                 '91352703',
                 '91486155',
-                '92910065',]
+                '92910065',
+                '91333995',]
         elif self.dataset_name == 'Combined':
             self.data_path = Path('../../data/Combined')
             self.patient_skip = [
@@ -48,35 +49,17 @@ class DatasetGeneratorImage(Dataset):
                 'HNSCC-01-0379',
                 '91352703',
                 '91486155',
-                '92910065',]
+                '92910065',
+                '91333995',]
+        else:
+            raise ValueError(f"need to set a dataset to use, valid ones include: {VALID_DATASETS}")
         self.patch_path = Path(patch_dir)
         self.data_path = Path(f"../../data/{self.dataset_name}")
         self.edge_dict = pd.read_pickle(edge_file)
         self.locations = pd.read_pickle(locations_file)
         self.pdir = self.data_path.joinpath(f"graph_staging/{self.patch_path.name}_{edge_file.split('/')[-1].replace('.pkl', '')}_{version}")
-        if self.dataset_name == 'HNSCC':
-            self.data_path = Path('../../data/HNSCC')
-            self.patient_skip = [ 
-                'HNSCC-01-0271',
-                'HNSCC-01-0379',
-                ]
-        elif self.dataset_name == 'UTSW_HNC':
-            self.data_path = Path('../../data/UTSW_HNC')
-            self.patient_skip = [
-                '91352703',
-                '91486155',
-                '92910065',]
-        elif self.dataset_name == 'Combined':
-            self.data_path = Path('../../data/Combined')
-            self.patient_skip = [
-                'HNSCC-01-0271',
-                'HNSCC-01-0379',
-                '91352703',
-                '91486155',
-                '92910065',]
-        else:
-            raise ValueError(f"need to set a dataset to use, valid ones include: {VALID_DATASETS}")
         self.patients = [pat.as_posix().split('/')[-1] for pat in sorted(self.patch_path.glob('*/')) if '.pkl' not in str(pat)]
+        #self.patients = [pat.as_posix().split('/')[-1] for pat in self.patch_path.glob('*/') if '.pkl' not in str(pat)]
         self.patients = [pat for pat in self.patients if pat not in self.patient_skip]
         self.years = 2
 
@@ -163,7 +146,7 @@ class DatasetGeneratorImage(Dataset):
 
     @property
     def processed_file_names(self):
-        return [f"graph_{idx}.pt" for idx, pat in enumerate(self.patients)]
+        return [f"graph_{idx}_{pat}.pt" for idx, pat in enumerate(self.patients)]
 
 
     def download(self):
@@ -182,12 +165,13 @@ class DatasetGeneratorImage(Dataset):
             edge_idx_map = {}
             #patches = list(self.patch_path.joinpath(pat).glob('image*.nii.gz'))
             patches = list(reversed(sorted(self.patch_path.joinpath(pat).glob('image*.nii.gz'))))
+            #patches = list(sorted(self.patch_path.joinpath(pat).glob('image*.nii.gz')))
 
             # reorder patches glob so that GTVp will always be first entry (if it exists) (and so will always have an index of 0 in the graph)
-            #if np.any(['GTVp' in str(l) for l in patches]):
-            #    patches_reorder = patches[-1:]
-            #    patches_reorder.extend(patches[:-1])
-            #    patches = patches_reorder
+            if np.any(['GTVp' in str(l) for l in patches]):
+                patches_reorder = patches[-1:]
+                patches_reorder.extend(patches[:-1])
+                patches = patches_reorder
     
             if 'rotation' in full_pat:
                 angle = self.rng_rotate.integers(-30, high=30)
@@ -220,7 +204,7 @@ class DatasetGeneratorImage(Dataset):
                     if self.pre_transform == 'MinMax':
                         patch_std = (patch_array - patch_array.min()) / (patch_array.max() - patch_array.min())
                         patch_scaled = patch_std * (1 - (-1)) + (-1)
-                        #patch_scaled = np.where(struct_array, patch_scaled, 0)
+                        patch_scaled = np.where(struct_array, patch_scaled, 0)
                     else:
                         raise Exception(f"pre_transform is set to {self.pre_transform}, but it is not implemented")
                 else:
@@ -264,14 +248,21 @@ class DatasetGeneratorImage(Dataset):
             #if len(self.edge_dict[pat]) == 0:
             if len(patch_list) == 1:
                 if self.config['with_edge_attr']:
-                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), edge_attr=torch.tensor([[0.]]), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=pat)
+                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), edge_attr=torch.tensor([[0.]]), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=full_pat)
                 else:
-                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=pat)
+                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=full_pat)
             else:
                 edges = torch.tensor([[edge_idx_map[gtv], edge_idx_map[gtv2]] for gtv, gtv2 in self.edge_dict[pat] if gtv in patch_list and gtv2 in patch_list], dtype=torch.int64)
+                #full_edges = []
+                #for gtv in patch_list:
+                #    for gtv2 in patch_list:
+                #        if gtv == gtv2: continue
+                #        full_edges.append([edge_idx_map[gtv], edge_idx_map[gtv2]])
+                #full_edges_ten = torch.tensor(full_edges, dtype=torch.int64)
                 #edges_op = torch.tensor([[edge_idx_map[gtv2], edge_idx_map[gtv]] for gtv, gtv2 in self.edge_dict[pat]], dtype=torch.int64)
                 #edges = torch.cat((edges, edges_op), 0)
-                data = Data(x=graph_array, edge_index=edges.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=pat)
+                data = Data(x=graph_array, edge_index=edges.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=full_pat)
+                #data = Data(x=graph_array, edge_index=full_edges_ten.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=pat)
 
 
             if self.config['with_edge_attr'] and len(patch_list) != 1:
@@ -283,7 +274,8 @@ class DatasetGeneratorImage(Dataset):
                 #data = norm_transform(data) 
             
 
-            torch.save(data, f"{self.processed_dir}/graph_{idx}.pt")
+            torch.save(data, f"{self.processed_dir}/graph_{idx}_{full_pat}.pt")
+            #torch.save(data, f"{self.processed_dir}/graph_{idx}.pt")
             idx += 1
         
 
@@ -292,7 +284,9 @@ class DatasetGeneratorImage(Dataset):
 
 
     def get(self, idx):
-        data = torch.load(f"{self.processed_dir}/graph_{idx}.pt")
+        pat = self.patients[idx]
+        data = torch.load(f"{self.processed_dir}/graph_{idx}_{pat}.pt")
+        #data = torch.load(f"{self.processed_dir}/graph_{idx}.pt")
         return data
 
 
