@@ -221,13 +221,13 @@ class DatasetGeneratorImage(Dataset):
                     patch_scaled = self.apply_flip(patch_scaled)
                     struct_array = self.apply_flip(struct_array)
 
-                node_image = np.stack((patch_scaled, struct_array))
+                #node_image = np.stack((patch_scaled, struct_array))
                 #node_image = np.moveaxis(node_image, [0, 1, 2, 3], [-1, -4, -3, -2]) 
                 print(f"        {patch_name}")
                 #print(f"        {np.shape(node_image)}")
                 print(f"        {np.shape(patch_scaled)}")
-                graph_array.append(node_image)
-                #graph_array.append(np.expand_dims(patch_scaled, 0))
+                #graph_array.append(node_image)
+                graph_array.append(np.expand_dims(patch_scaled, 0))
 
             graph_array = np.array(graph_array)
 

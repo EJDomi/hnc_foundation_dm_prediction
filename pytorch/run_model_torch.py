@@ -217,7 +217,8 @@ class RunModel(object):
             if '2d' in self.config['data_type']:
                 self.feature_extractor = res2d.resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
             else:
-                self.feature_extractor = resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
+                self.feature_extractor = resnet50(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
+                #self.feature_extractor = resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
                 #self.feature_extractor = resnet152(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
                 #self.feature_extractor = resnet200(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
             #self.feature_extractor.classify = nn.Identity() 
@@ -1024,6 +1025,7 @@ class RunModel(object):
             out_file.writelines([f"Fold Test {idx}: {met}\n" for idx, met in enumerate(overall_test_metrics)])
             out_file.write(f"Overall Mean Val: {np.mean(overall_val_metrics, axis=0)}\n")
             out_file.write(f"Fold Test: {final_test_metrics}\n")
+            out_file.write(f"Config: {self.config}\n")
       
         self.fold_df.to_csv(f"{self.log_dir}/folds.csv")
         self.train_fold_df.to_csv(f"{self.log_dir}/train_folds.csv")
