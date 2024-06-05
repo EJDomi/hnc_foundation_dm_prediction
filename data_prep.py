@@ -76,6 +76,18 @@ def retrieve_patients(csv_dir, dataset='HNSCC'):
 
         patients.index = patients.index.astype(str)
 
+    if dataset == 'RADCURE':
+        clinical_info = pd.read_excel(Path(csv_dir).joinpath('RADCURE-DA-CLINICAL-2.xlsx'))
+        clinical_info.set_index('patient_id', inplace=True)
+
+        treatment_start = pd.to_datetime(clinical_info['RT Start'], format='%m/%d/%Y')
+        recurrence_date = pd.to_datetime(clinical_info['Date Distant'], format='%m/%d/%Y')
+
+        time_to_recurrence = (recurrence_date - treatment_start) / pd.Timedelta("365 days")
+
+        patients = time_to_recurrence.rename('survival_dm')
+        
+
     return patients
 
 

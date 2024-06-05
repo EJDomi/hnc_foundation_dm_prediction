@@ -4,6 +4,8 @@ import random
 import numpy as np
 import pandas as pd
 
+from tqdm.auto import tqdm
+
 from scipy.ndimage import center_of_mass
 
 import SimpleITK as sitk
@@ -19,6 +21,7 @@ import torch_geometric.transforms as T
 VALID_DATASETS = [
 'HNSCC',
 'UTSW_HNC',
+'RADCURE',
 'Combined',
 ]
 
@@ -42,6 +45,10 @@ class DatasetGeneratorImage(Dataset):
                 '91486155',
                 '92910065',
                 '91333995',]
+        elif self.dataset_name == 'RADCURE':
+            self.data_path = Path('../../data/RADCURE')
+            self.patient_skip = [
+                ]
         elif self.dataset_name == 'Combined':
             self.data_path = Path('../../data/Combined')
             self.patient_skip = [
@@ -87,9 +94,10 @@ class DatasetGeneratorImage(Dataset):
             self.y = self.y_source['has_dm'] & (self.y_source['survival_dm'] < self.years)
             #self.y = self.y_source['has_lr'] & (self.y_source['survival_lr'] < self.years)
             #self.y = self.y_source['has_dm']
-        elif self.dataset_name == 'UTSW_HNC':
+        elif self.dataset_name in ['UTSW_HNC', 'RADCURE']:
             self.y_source = labels.loc[self.patients]
             self.y = self.y_source.notna() & (self.y_source < self.years) & (self.y_source > 0)
+           
 
         if self.config['augment']:
             aug_pos_pats = self.y[self.y==1]
@@ -157,15 +165,15 @@ class DatasetGeneratorImage(Dataset):
         print("processed graph files not present, starting graph production")
         norm_filter = sitk.NormalizeImageFilter()
         idx = 0
-        for full_pat in self.patients:
+        for full_pat in tqdm(self.patients):
             pat = full_pat.split('_')[0]
             if pat in self.patient_skip: continue
             print(f"    {full_pat}, {idx}")
             graph_array = []
             edge_idx_map = {}
             #patches = list(self.patch_path.joinpath(pat).glob('image*.nii.gz'))
-            patches = list(reversed(sorted(self.patch_path.joinpath(pat).glob('image*.nii.gz'))))
-            #patches = list(sorted(self.patch_path.joinpath(pat).glob('image*.nii.gz')))
+            #patches = list(reversed(sorted(self.patch_path.joinpath(pat).glob('image*.nii.gz'))))
+            patches = list(sorted(self.patch_path.joinpath(pat).glob('image*.nii.gz')))
 
             # reorder patches glob so that GTVp will always be first entry (if it exists) (and so will always have an index of 0 in the graph)
             if np.any(['GTVp' in str(l) for l in patches]):
@@ -177,7 +185,7 @@ class DatasetGeneratorImage(Dataset):
                 angle = self.rng_rotate.integers(-30, high=30)
             patch_list = []
             for i, patch in enumerate(patches):
-                patch_name = patch.as_posix().split('/')[-1].split('_')[-1].replace('.nii.gz','')
+                patch_name = '_'.join(patch.as_posix().split('/')[-1].split('_')[1:]).replace('.nii.gz','')
                 #if i > 0: continue
                 patch_list.append(patch_name)
 
