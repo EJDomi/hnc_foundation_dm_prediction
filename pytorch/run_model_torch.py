@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 import pickle
 
+from tqdm.auto import tqdm
+
 from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 
@@ -28,7 +30,7 @@ from hnc_project.pytorch.simple_gcn import SimpleGCN
 from hnc_project.pytorch.gated_gcn import GatedGCN, ClinicalGatedGCN
 from hnc_project.pytorch.deep_gcn import DeepGCN, AltDeepGCN
 from hnc_project.pytorch.graphu_gcn import myGraphUNet
-from hnc_project.pytorch.resnet import resnet50, resnet101, resnet152, resnet200
+from hnc_project.pytorch.resnet import resnet18, resnet34, resnet50, resnet101, resnet152, resnet200
 import hnc_project.pytorch.graphag_resnet as ga
 import hnc_project.pytorch.resnet_2d as res2d
 from hnc_project.pytorch.cnn import CNN
@@ -217,7 +219,10 @@ class RunModel(object):
             if '2d' in self.config['data_type']:
                 self.feature_extractor = res2d.resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
             else:
-                self.feature_extractor = resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
+                #self.feature_extractor = resnet18(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
+                #self.feature_extractor = resnet34(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
+                self.feature_extractor = resnet50(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
+                #self.feature_extractor = resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
                 #self.feature_extractor = resnet152(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
                 #self.feature_extractor = resnet200(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
             #self.feature_extractor.classify = nn.Identity() 
@@ -358,6 +363,12 @@ class RunModel(object):
             edge_file = '../../data/UTSW_HNC/edge_staging/edges_utsw_040224.pkl'
             locations_file = '../../data/UTSW_HNC/edge_staging/centered_locations_utsw_040324.pkl'
             clinical_data = f"../../data/UTSW_HNC/{self.config['clinical_data']}"
+        elif self.config['dataset_name'] == 'RADCURE':
+            patch_dir = '../../data/RADCURE/Nii_222_50_50_60_Crop'
+            radiomics_dir = None
+            edge_file = '../../data/RADCURE/edge_staging/edges_radcure_053024.pkl'
+            locations_file = '../../data/RADCURE/edge_staging/centered_locations_radcure_060424.pkl'
+            clinical_data = f"../../data/RADCURE/{self.config['clinical_data']}"
         elif self.config['dataset_name'] == 'Combined':
             patch_dir = '../../data/Combined/Nii_222_50_50_60_Crop'
             radiomics_dir = None
@@ -505,8 +516,8 @@ class RunModel(object):
             scale_features = None
             self.clinical_mean = []
             self.clinical_std = []
-            for idx in self.train_splits:
-                for i, feat in enumerate(self.data[idx]):
+            for idx in tqdm(self.train_splits):
+                for i, feat in tqdm(list(enumerate(self.data[idx]))):
                     if i == 0:
                         scale_features = feat.clinical[0][[0, 1]].unsqueeze(0)
                         continue
@@ -514,6 +525,11 @@ class RunModel(object):
                 
                 self.clinical_mean.append(scale_features.mean(0))
                 self.clinical_std.append(scale_features.std(0))
+            print(f"Mean with splitting seed {self.seed}")
+            print(self.clinical_mean)
+            print(f"STD with splitting seed {self.seed}")
+            print(self.clinical_std)
+                
 
         if self.data_type == 'both' and self.radiomics_mean is None:
             self.radiomics_mean = []

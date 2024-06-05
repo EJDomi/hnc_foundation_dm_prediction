@@ -115,11 +115,12 @@ class ResNet(nn.Module):
     
         self.avgpool = nn.AdaptiveAvgPool3d((1,1,1))
 
-        if self.n_clinical is not None:
-            #self.classify = nn.Linear(self.channels[-1]*self.expansion + n_clinical, 512)
-            self.classify = nn.Linear(self.channels[-1]*self.expansion + n_clinical, num_classes)
-        else:
-            self.classify = nn.Linear(self.channels[-1]*self.expansion, num_classes)
+        #if self.n_clinical is not None:
+        #    #self.classify = nn.Linear(self.channels[-1]*self.expansion + n_clinical, 512)
+        #    self.classify = nn.Linear(self.channels[-1]*self.expansion + n_clinical, num_classes)
+        #else:
+        #    self.classify = nn.Linear(self.channels[-1]*self.expansion, num_classes)
+        self.classify = nn.LazyLinear(num_classes)
 
         #self.classify1 = nn.Linear(512, 512)
         #self.classify2 = nn.Linear(512, 512)
@@ -180,6 +181,13 @@ class ResNet(nn.Module):
         x = x.squeeze()
         return x
 
+
+def resnet18(num_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock, n_clinical=None):
+    return ResNet(blocks, [2,2,2,2], in_channels=in_channels, num_classes=num_classes, dropout=dropout, n_clinical=n_clinical)
+
+
+def resnet34(num_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock, n_clinical=None):
+    return ResNet(blocks, [3,4,6,3], in_channels=in_channels, num_classes=num_classes, dropout=dropout, n_clinical=n_clinical)
 
 def resnet50(num_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck, n_clinical=None):
     return ResNet(blocks, [3,4,6,3], in_channels=in_channels, num_classes=num_classes, dropout=dropout, n_clinical=n_clinical)
