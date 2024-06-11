@@ -69,9 +69,11 @@ class RunModel(object):
         self.augment = config['augment']
         self.external_data = None
 
-        if f"{self.seed}" in self.config['clinical_mean'].keys():
-            self.clinical_mean = torch.tensor(self.config['clinical_mean'][f"{self.seed}"], dtype=torch.float).to(self.device)
-            self.clinical_std = torch.tensor(self.config['clinical_std'][f"{self.seed}"], dtype=torch.float).to(self.device)
+        if f"{self.config['dataset_name']}{self.seed}" in self.config['clinical_mean'].keys():
+            print("Using stored mean and std")
+            seed_key = f"{self.config['dataset_name']}{self.seed}"
+            self.clinical_mean = torch.tensor(self.config['clinical_mean'][seed_key], dtype=torch.float).to(self.device)
+            self.clinical_std = torch.tensor(self.config['clinical_std'][seed_key], dtype=torch.float).to(self.device)
         else:
             self.clinical_mean = None
             self.clinical_std = None
@@ -485,14 +487,14 @@ class RunModel(object):
             self.aug_splits = []
             if len(augments) > 0:
                 aug_pats = y_aug.index
-                for split in self.train_splits:
+                for split in tqdm(self.train_splits):
                     aug_split = []
                     split_pats = y.index[split]
                     for pat in aug_pats:
                         if pat.split('_')[0] in split_pats:
                             aug_split.append(pat)
                     self.aug_splits.append(aug_split)
-                for idx in range(len(self.train_splits)):
+                for idx in tqdm(range(len(self.train_splits))):
                     self.train_splits[idx].extend([self.data.y.index.get_loc(pat) for pat in self.aug_splits[idx]])
             self.val_splits = [self.folds[i] for i in self.val_folds]
             self.test_splits = [self.folds[i] for i in self.test_folds]
@@ -932,6 +934,9 @@ class RunModel(object):
                 self.fold_probs[k] = []
                 self.fold_targets[k] = []
 
+        if resume:
+            fold_range = range(resume_idx, 5)
+        else:
             fold_range = range(5)
 
         for fold_idx in fold_range:
@@ -1110,7 +1115,7 @@ class RunModel(object):
                 #### 0 - loss; 1 - ap; 2 - auc; 3 - sen; 4 - spe
                 self.lr_sched.step(val_results[0][2])   
                 # for running on unix/linux
-                #self.lr_sched.get_last_lr()   
+                print(f"learning rate: {self.lr_sched.get_last_lr()}")
                 #self.lr_sched.step()   
         
             out_csv.append(f"{self.epoch},{train_results[0]},{train_results[1]},{train_results[2]},{val_results[0][0]},{val_results[0][1]},{val_results[0][2]}\n")

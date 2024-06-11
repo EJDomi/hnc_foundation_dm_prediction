@@ -181,7 +181,7 @@ class DatasetGeneratorImage(Dataset):
         for full_pat in tqdm(self.patients):
             pat = full_pat.split('_')[0]
             if pat in self.patient_skip: continue
-            print(f"    {full_pat}, {idx}")
+            #print(f"    {full_pat}, {idx}")
             graph_array = []
             edge_idx_map = {}
             #patches = list(self.patch_path.joinpath(pat).glob('image*.nii.gz'))
@@ -189,10 +189,10 @@ class DatasetGeneratorImage(Dataset):
             patches = list(sorted(self.patch_path.joinpath(pat).glob('image*.nii.gz')))
 
             # reorder patches glob so that GTVp will always be first entry (if it exists) (and so will always have an index of 0 in the graph)
-            if np.any(['GTVp' in str(l) for l in patches]):
-                patches_reorder = patches[-1:]
-                patches_reorder.extend(patches[:-1])
-                patches = patches_reorder
+            #if np.any(['GTVp' in str(l) for l in patches]):
+            #    patches_reorder = patches[-1:]
+            #    patches_reorder.extend(patches[:-1])
+            #    patches = patches_reorder
     
             if 'rotation' in full_pat:
                 angle = self.rng_rotate.integers(-30, high=30)
@@ -244,9 +244,9 @@ class DatasetGeneratorImage(Dataset):
 
                 #node_image = np.stack((patch_scaled, struct_array))
                 #node_image = np.moveaxis(node_image, [0, 1, 2, 3], [-1, -4, -3, -2]) 
-                print(f"        {patch_name}")
+                #print(f"        {patch_name}")
                 #print(f"        {np.shape(node_image)}")
-                print(f"        {np.shape(patch_scaled)}")
+                #print(f"        {np.shape(patch_scaled)}")
                 #graph_array.append(node_image)
                 graph_array.append(np.expand_dims(patch_scaled, 0))
 
