@@ -96,12 +96,25 @@ class DatasetGeneratorImage(Dataset):
             #self.y = self.y_source['has_dm']
         elif self.dataset_name in ['UTSW_HNC', 'RADCURE']:
             self.y_source = labels.loc[self.patients]
-            self.y = self.y_source.notna() & (self.y_source < self.years) & (self.y_source > 0)
+
+            if self.config['challenge'] == True:
+                self.y_challenge = self.y_source[(self.y_source['RADCURE-challenge'] == 'training') | (self.y_source['RADCURE-challenge'] == 'test')]
+                self.patients = list(self.y_challenge.index)
+                self.y = self.y_challenge['survival_dm'].notna() & (self.y_challenge['survival_dm'] < self.years) & (self.y_challenge['survival_dm'] > 0)
+
+            else:
+                self.y = self.y_source['survival_dm'].notna() & (self.y_source['survival_dm'] < self.years) & (self.y_source['survival_dm'] > 0)
+            
            
 
         if self.config['augment']:
-            aug_pos_pats = self.y[self.y==1]
-            aug_pats = self.y
+            if self.config['challenge']:
+                aug_pos_pats = self.y[(self.y==1) & (self.y_challenge['RADCURE-challenge'] == 'training')]
+                aug_pats = (self.y) & (self.y_challenge['RADCURE-challenge'] == 'training')
+               
+            else:
+                aug_pos_pats = self.y[self.y==1]
+                aug_pats = self.y
             if 'rotation' in self.config['augments']:
                 for rot in range(self.config['n_rotations']):
                     aug_rot_pats = aug_pats.copy(deep=True)
