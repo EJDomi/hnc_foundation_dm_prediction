@@ -87,6 +87,7 @@ def retrieve_patients(csv_dir, dataset='HNSCC'):
 
         patients = time_to_recurrence.rename('survival_dm')
         
+        patients = pd.concat([patients, clinical_info['RADCURE-challenge']], axis=1)
 
     return patients
 
