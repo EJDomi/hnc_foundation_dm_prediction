@@ -65,8 +65,8 @@ class ClinicalGatedGCN(nn.Module):
         self.dropout = Dropout(dropout)
 
     def forward(self, x, edge_index, edge_attr, batch, clinical, radiomics=None):
-        if radiomics is not None:
-            x = torch.cat((x,radiomics), 1)
+        #if radiomics is not None:
+        #    x = torch.cat((x,radiomics), 1)
         x = self.conv1(x=x, edge_index=edge_index, edge_attr=edge_attr)
         x = self.relu(x)
         x = self.norm1(x)

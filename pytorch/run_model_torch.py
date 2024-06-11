@@ -26,6 +26,7 @@ import torchvision
 import torchmetrics
 
 from hnc_project.pytorch.dataset_class import DatasetGeneratorRadiomics, DatasetGeneratorImage, DatasetGeneratorBoth
+from hnc_project.pytorch.densenet import DenseNet3d
 from hnc_project.pytorch.simple_gcn import SimpleGCN
 from hnc_project.pytorch.gated_gcn import GatedGCN, ClinicalGatedGCN
 from hnc_project.pytorch.deep_gcn import DeepGCN, AltDeepGCN
@@ -221,14 +222,15 @@ class RunModel(object):
             else:
                 #self.feature_extractor = resnet18(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
                 #self.feature_extractor = resnet34(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
-                self.feature_extractor = resnet50(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
+                #self.feature_extractor = resnet50(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
                 #self.feature_extractor = resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
                 #self.feature_extractor = resnet152(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
                 #self.feature_extractor = resnet200(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
+                self.feature_extractor = DenseNet3d(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout_p=self.config['ext_dropout']).to(self.device)
             #self.feature_extractor.classify = nn.Identity() 
             if transfer == 'MedicalNet':
                 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-                initial_state = torch.load('./models/resnet_101.pth', map_location=self.device)['state_dict']
+                initial_state = torch.load('./models/resnet_50.pth', map_location=self.device)['state_dict']
                 fixed_state = {}
                 for k, v in initial_state.items():
                     if 'layer' in k:
@@ -248,8 +250,15 @@ class RunModel(object):
 
                 self.feature_extractor.load_state_dict(fixed_state, strict=False)
                 for name, p in self.feature_extractor.named_parameters():
-                    if 'classify' in name: continue
-                    #if 'blocks.3' in name: continue
+                    if 'classify' in name: 
+                        p.requires_grad = True
+                        continue
+                    if 'blocks.3' in name: 
+                        p.requires_grad = True
+                        continue
+                    if 'blocks.2' in name: 
+                        p.requires_grad = True
+                        continue
                     p.requires_grad = False
 
             if transfer == 'ImageNet':
@@ -412,6 +421,27 @@ class RunModel(object):
             self.data = DatasetGeneratorRadiomics(patch_dir, radiomics_dir, edge_file, locations_file, version, pre_transform=self.transform, config=self.config)
         
 
+    def set_train_test_split_challenge(self):
+        train_pats = self.data.y[self.data.y_challenge['RADCURE-challenge'] == 'training'].index
+        test_pats = self.data.y[self.data.y_challenge['RADCURE-challenge'] == 'test'].index
+       
+        x = [self.data.y.index.get_loc(idx) for idx in train_pats]
+        y = self.data.y.iloc[x] 
+        self.folds = partition_dataset_classes(x, y, num_partitions=5, shuffle=True, seed=self.config['seed'])
+        self.train_folds = [[0,1,2,3],
+                            [4,0,1,2],
+                            [3,4,0,1],
+                            [2,3,4,0],
+                            [1,2,3,4]]
+        self.val_folds = [4, 3, 2, 1, 0]
+
+        self.train_splits = [self.folds[i]+self.folds[j]+self.folds[k]+self.folds[l] for i,j,k,l in self.train_folds]
+        self.val_splits = [self.folds[i] for i in self.val_folds]
+        self.test_splits = [self.data.y.index.get_loc(idx) for idx in test_pats]            
+        self.class_weights = []
+        for split in self.train_splits:
+            self.class_weights.append([len(self.data.y.values[split][self.data.y.values[split]==0]) / np.sum(self.data.y.values[split])])
+         
 
     def set_train_test_split(self):
         if self.cross_val:
@@ -555,7 +585,10 @@ class RunModel(object):
         if self.nested_cross_val:
             self.train_nested_dataloaders = [[DataLoader(self.data[nest], batch_size=self.batch_size, shuffle=True, pin_memory=True) for nest in fold] for fold in self.nested_train_splits]
         elif self.cross_val:
-            self.train_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, shuffle=True, pin_memory=True) for fold in self.train_splits]
+            if self.batch_size < 10:
+                self.train_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, drop_last=True, shuffle=True, pin_memory=True) for fold in self.train_splits]
+            else:
+                self.train_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, drop_last=False, shuffle=True, pin_memory=True) for fold in self.train_splits]
         else:
             self.train_dataloader = DataLoader(self.data[self.idx_train], batch_size=self.batch_size, shuffle=True, pin_memory=True)
 
@@ -570,7 +603,10 @@ class RunModel(object):
 
 
     def set_test_loader(self):
-        if self.cross_val:
+        if self.config['challenge']:
+            self.test_dataloader = [DataLoader(self.data[self.test_splits], batch_size=self.batch_size, shuffle=False, pin_memory=True) for fold in range(5)]
+
+        elif self.cross_val:
             self.test_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, shuffle=False, pin_memory=True) for fold in self.test_splits]
         else:
             self.test_dataloader = DataLoader(self.data[self.idx_test], batch_size=self.batch_size, shuffle=False, pin_memory=True)
@@ -879,20 +915,26 @@ class RunModel(object):
 
    
 
-    def run_crossval(self):
+    def run_crossval(self, resume=False, resume_idx=None):
         if not self.cross_val:
             raise ValueError('cross_val needs to be set to True to run')
-        self.fold_metrics = []
-        self.fold_probs = {}
-        self.fold_targets = {}
-        self.fold_probs = {}
-        self.fold_targets = {}
-        keys = ['train', 'val', 'test']
-        for k in keys:
-            self.fold_probs[k] = []
-            self.fold_targets[k] = []
+        if resume:
+            print(f"resuming training from fold {resume_idx}")
+            fold_range = range(resume_idx, 5)
+        else:
+            self.fold_metrics = []
+            self.fold_probs = {}
+            self.fold_targets = {}
+            self.fold_probs = {}
+            self.fold_targets = {}
+            keys = ['train', 'val', 'test']
+            for k in keys:
+                self.fold_probs[k] = []
+                self.fold_targets[k] = []
 
-        for fold_idx in range(5):
+            fold_range = range(5)
+
+        for fold_idx in fold_range:
             if self.feature_extractor is not None and self.data_type!='radiomics':
                 self.set_feature_extractor(transfer=self.config['transfer'])
             self.reset_metrics()
