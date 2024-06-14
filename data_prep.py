@@ -16,7 +16,7 @@ from skimage.transform import rescale
 from skimage.util import random_noise
 from skimage.transform import rotate
 
-import elasticdeform
+#import elasticdeform
 
 from scipy.ndimage.measurements import center_of_mass
 from scipy.stats.mstats import winsorize
