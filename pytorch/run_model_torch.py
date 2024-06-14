@@ -138,15 +138,17 @@ class RunModel(object):
             raise ValueError(f"Need to set feature extractor before initializing model")
 
         if self.feature_extractor is not None:
-            if 'SpotTune' in self.extractor_name:
+            if 'DenseNet' in self.extractor_name:
+                in_channels = self.config['n_extracted_features']
+            elif 'SpotTune' in self.extractor_name:
                 in_channels = self.feature_extractor.resnet.classify.out_features
             else:
                 in_channels = self.feature_extractor.classify.out_features
         else:
             in_channels = 64
 
-        if 'both' in self.data_type:
-            in_channels += len(self.data[0].radiomics[0])
+        #if 'both' in self.data_type:
+        #    in_channels += len(self.data[0].radiomics[0])
 
         if self.model_name == 'SimpleGCN':
             self.model = SimpleGCN(self.data.num_node_features, self.config['n_hidden_channels'], self.n_classes, self.config['dropout']).to(self.device)
@@ -224,12 +226,13 @@ class RunModel(object):
             else:
                 #self.feature_extractor = resnet18(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
                 #self.feature_extractor = resnet34(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
-                #self.feature_extractor = resnet50(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
+                self.feature_extractor = resnet50(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
                 #self.feature_extractor = resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
                 #self.feature_extractor = resnet152(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
                 #self.feature_extractor = resnet200(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
-                self.feature_extractor = DenseNet3d(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout_p=self.config['ext_dropout']).to(self.device)
             #self.feature_extractor.classify = nn.Identity() 
+            self.config['n_extracted_features'] = self.feature_extractor.classify.out_features
+
             if transfer == 'MedicalNet':
                 device = 'cuda' if torch.cuda.is_available() else 'cpu'
                 initial_state = torch.load('./models/resnet_50.pth', map_location=self.device)['state_dict']
@@ -296,6 +299,11 @@ class RunModel(object):
                 for name, p in self.feature_extractor.named_parameters():
                     p.requires_grad=False
             print(f"feature extractor with transfer learning: {self.config['transfer']} set")
+
+        if self.extractor_name == 'DenseNet':
+            self.feature_extractor = DenseNet3d(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout_p=self.config['ext_dropout']).to(self.device)
+            self.feature_extractor.classify = nn.Identity() 
+            self.config['n_extracted_features'] = 175
 
         if self.extractor_name == 'SpotTune':
             self.feature_extractor = SpotTune(num_classes=64, in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
@@ -429,7 +437,15 @@ class RunModel(object):
        
         x = [self.data.y.index.get_loc(idx) for idx in train_pats]
         y = self.data.y.iloc[x] 
-        self.folds = partition_dataset_classes(x, y, num_partitions=5, shuffle=True, seed=self.config['seed'])
+        self.folds = None
+        if self.config['preset_folds']:
+            self.folds = pd.read_pickle(self.data.data_path.joinpath(self.config['preset_fold_file'])
+        else:
+            self.folds = partition_dataset_classes(x, y, num_partitions=5, shuffle=True, seed=self.config['seed'])
+            with open(self.data.data_path.joinpath(self.config['preset_fold_file']), 'wb') as f:
+                pickle.dump(self.folds, f)
+                f.close()
+
         self.train_folds = [[0,1,2,3],
                             [4,0,1,2],
                             [3,4,0,1],
@@ -451,17 +467,25 @@ class RunModel(object):
             for aug in self.config['augments']:
                 if 'rotation' in aug: continue
                 augments = np.append(augments, np.where([aug in pat for pat in self.data.patients]))
-            if len(augments) > 0:
-                x = np.array(range(self.data.len()))
-                x = np.delete(x, augments)
 
-                y_aug = self.data.y.iloc[augments]
-                y = self.data.y.drop(y_aug.index)
+            self.folds = None
+            if self.config['preset_folds']:
+                self.folds = pd.read_pickle(self.data.data_path.joinpath(self.config['preset_fold_file'])
             else:
-                x = np.array(range(self.data.len()))
-                y_aug = None
-                y = self.data.y
-            self.folds = partition_dataset_classes(x, y, num_partitions=5, shuffle=True, seed=self.config['seed'])
+                if len(augments) > 0:
+                    x = np.array(range(self.data.len()))
+                    x = np.delete(x, augments)
+
+                    y_aug = self.data.y.iloc[augments]
+                    y = self.data.y.drop(y_aug.index)
+                else:
+                    x = np.array(range(self.data.len()))
+                    y_aug = None
+                    y = self.data.y
+                self.folds = partition_dataset_classes(x, y, num_partitions=5, shuffle=True, seed=self.config['seed'])
+                with open(self.data.data_path.joinpath(self.config['preset_fold_file']), 'wb') as f:
+                    pickle.dump(self.folds, f)
+                    f.close()
 
             self.train_folds = [[0,1,2],
                                 [4,0,1],
@@ -585,12 +609,9 @@ class RunModel(object):
 
     def set_train_loader(self):
         if self.nested_cross_val:
-            self.train_nested_dataloaders = [[DataLoader(self.data[nest], batch_size=self.batch_size, shuffle=True, pin_memory=True) for nest in fold] for fold in self.nested_train_splits]
+            self.train_nested_dataloaders = [[DataLoader(self.data[nest], batch_size=self.batch_size, drop_last=True, shuffle=True, pin_memory=True) for nest in fold] for fold in self.nested_train_splits]
         elif self.cross_val:
-            if self.batch_size < 10:
-                self.train_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, drop_last=True, shuffle=True, pin_memory=True) for fold in self.train_splits]
-            else:
-                self.train_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, drop_last=False, shuffle=True, pin_memory=True) for fold in self.train_splits]
+            self.train_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, drop_last=(len(self.train_splits[idx])%2<2), shuffle=True, pin_memory=True) for idx, fold in enumerate(self.train_splits)]
         else:
             self.train_dataloader = DataLoader(self.data[self.idx_train], batch_size=self.batch_size, shuffle=True, pin_memory=True)
 
@@ -606,7 +627,7 @@ class RunModel(object):
 
     def set_test_loader(self):
         if self.config['challenge']:
-            self.test_dataloader = [DataLoader(self.data[self.test_splits], batch_size=self.batch_size, shuffle=False, pin_memory=True) for fold in range(5)]
+            self.test_cross_dataloaders = [DataLoader(self.data[self.test_splits], batch_size=self.batch_size, shuffle=False, pin_memory=True) for fold in range(5)]
 
         elif self.cross_val:
             self.test_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, shuffle=False, pin_memory=True) for fold in self.test_splits]
@@ -952,8 +973,8 @@ class RunModel(object):
             self.fold_targets['train'].append(results[1][0][1])
             self.fold_probs['val'].extend(results[1][1][0])
             self.fold_targets['val'].extend(results[1][1][1])
-            self.fold_probs['test'].extend(results[1][2][0])
-            self.fold_targets['test'].extend(results[1][2][1])
+            self.fold_probs['test'].append(results[1][2][0])
+            self.fold_targets['test'].append(results[1][2][1])
 
     
         metric_results = np.array(self.fold_metrics)
@@ -964,11 +985,11 @@ class RunModel(object):
             self.fold_targets[k] = torch.tensor(np.array(self.fold_targets[k]), dtype=torch.long)
 
         overall_test_metrics = [
-                                self.acc_fn(self.fold_probs['test'], self.fold_targets['test']),
-                                self.ap_fn(self.fold_probs['test'], self.fold_targets['test']),
-                                self.auc_fn(self.fold_probs['test'], self.fold_targets['test']),
-                                self.sen_fn(self.fold_probs['test'], self.fold_targets['test']),
-                                self.spe_fn(self.fold_probs['test'], self.fold_targets['test']),
+                                self.acc_fn(torch.mean(self.fold_probs['test'], axis=0), self.fold_targets['test'][0]),
+                                self.ap_fn(torch.mean(self.fold_probs['test'], axis=0), self.fold_targets['test'][0]),
+                                self.auc_fn(torch.mean(self.fold_probs['test'], axis=0), self.fold_targets['test'][0]),
+                                self.sen_fn(torch.mean(self.fold_probs['test'], axis=0), self.fold_targets['test'][0]),
+                                self.spe_fn(torch.mean(self.fold_probs['test'], axis=0), self.fold_targets['test'][0]),
                                ]
         overall_val_metrics = [
                                 self.acc_fn(self.fold_probs['val'], self.fold_targets['val']),
