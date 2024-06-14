@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
 model_config = {
-                "model_name": 'ClinicalGatedGCN',
-                "extractor_name": 'ResNet',
                 "dataset_name": 'HNSCC',
                 "external_dataset_name": 'UTSW_HNC',
                 "challenge": True,
+                "preset_folds": False,
+                "preset_fold_file": 'preset_folds_061424.pkl',
                 "clinical_data": 'clinical_features.pkl',
                 "data_type": 'image',
                 "scaling_type": 'MinMax',
@@ -20,6 +20,8 @@ model_config = {
 	        "n_epochs": 100,
                 "seed": 42,
                 "n_classes": 1,
+                "model_name": 'ClinicalGatedGCN',
+                "extractor_name": 'ResNet',
                 "n_extracted_features": 2048,
                 "n_hidden_channels": 64,
                 "n_channels": 1,
@@ -35,8 +37,10 @@ model_config = {
                 "log_dir": None,
                 "augment": False,
                 "augments": ['rotation'],
-                "n_rotations": 10,
                 "transfer": None,
+                "n_rotations": 10,
+               "num_deep_layers": 28,
+               "positive_increase": 5,
                 "max_nodes": { 'HNSCC': 15,
                              },
                 "clinical_mean": {'Win42': [[58.1292, 68.8017],
@@ -61,8 +65,6 @@ model_config = {
                                                [11.4334,  5.6652],
                                                [11.4584,  5.6586]],
                                 },
-               "num_deep_layers": 28,
-               "positive_increase": 5,
                "radiomics_mean": '../../data/HNSCC/radiomics_mean.pt',
                "radiomics_std": '../../data/HNSCC/radiomics_std.pt',
                }         
