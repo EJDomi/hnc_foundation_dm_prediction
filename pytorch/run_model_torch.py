@@ -115,7 +115,11 @@ class RunModel(object):
         self.best_M =0.
         self.best_loss = 5.0
         self.best_sum = 0.
+        #self.best_model = [None, None, None, None, None]
+        #self.best_model_loss = [None, None, None, None, None]
         self.best_model = None
+        self.best_model_loss = None
+        self.best_model_idx = 0
 
         self.feature_extractor = None
 
@@ -126,7 +130,11 @@ class RunModel(object):
         self.best_M =0.
         self.best_loss = 5.0
         self.best_sum = 0.
+        #self.best_model = [None, None, None, None, None]
+        #self.best_model_loss = [None, None, None, None, None]
         self.best_model = None
+        self.best_model_loss = None
+        self.best_model_idx = 0
     
 
     def set_model(self):
@@ -191,8 +199,8 @@ class RunModel(object):
             self.model = CNN(self.config['n_channels'], self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
         elif self.model_name == 'ResNet':
-            #self.model = resnet50(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
-            self.model = resnet101(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+            self.model = resnet50(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+            #self.model = resnet101(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
         elif self.model_name == 'GraphAgResNet':
             self.model = ga.resnet101(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
             
@@ -383,7 +391,8 @@ class RunModel(object):
             locations_file = '../../data/UTSW_HNC/edge_staging/centered_locations_utsw_040324.pkl'
             clinical_data = f"../../data/UTSW_HNC/{self.config['clinical_data']}"
         elif self.config['dataset_name'] == 'RADCURE':
-            patch_dir = '../../data/RADCURE/Nii_222_50_50_60_Crop'
+            #patch_dir = '../../data/RADCURE/Nii_222_50_50_60_Crop'
+            patch_dir = '../../data/RADCURE/Nii_111_75_75_100_Crop'
             radiomics_dir = None
             edge_file = '../../data/RADCURE/edge_staging/edges_radcure_053024.pkl'
             locations_file = '../../data/RADCURE/edge_staging/centered_locations_radcure_060424.pkl'
@@ -432,14 +441,14 @@ class RunModel(object):
         
 
     def set_train_test_split_challenge(self):
-        train_pats = self.data.y[self.data.y_challenge['RADCURE-challenge'] == 'training'].index
-        test_pats = self.data.y[self.data.y_challenge['RADCURE-challenge'] == 'test'].index
+        train_pats = self.data.y.loc[self.data.y_challenge[self.data.y_challenge['RADCURE-challenge'] == 'training'].index]
+        test_pats = self.data.y.loc[self.data.y_challenge[self.data.y_challenge['RADCURE-challenge'] == 'test'].index]
        
-        x = [self.data.y.index.get_loc(idx) for idx in train_pats]
+        x = [self.data.y.index.get_loc(idx) for idx in train_pats.index]
         y = self.data.y.iloc[x] 
         self.folds = None
         if self.config['preset_folds']:
-            self.folds = pd.read_pickle(self.data.data_path.joinpath(self.config['preset_fold_file'])
+            self.folds = pd.read_pickle(self.data.data_path.joinpath(self.config['preset_fold_file']))
         else:
             self.folds = partition_dataset_classes(x, y, num_partitions=5, shuffle=True, seed=self.config['seed'])
             with open(self.data.data_path.joinpath(self.config['preset_fold_file']), 'wb') as f:
@@ -454,8 +463,14 @@ class RunModel(object):
         self.val_folds = [4, 3, 2, 1, 0]
 
         self.train_splits = [self.folds[i]+self.folds[j]+self.folds[k]+self.folds[l] for i,j,k,l in self.train_folds]
+        for fold_idx, fold in enumerate(self.train_splits):
+            fold_pats = self.data.y_challenge.iloc[fold].index
+            aug_pats = self.data.y[['rotation' in pat for pat in self.data.y.index]].index
+            aug_fold_pats = [pat for pat in aug_pats if np.any([fold_pat in pat for fold_pat in fold_pats])]
+            self.train_splits[fold_idx].extend(self.data.y.index.get_indexer(aug_fold_pats))
+            
         self.val_splits = [self.folds[i] for i in self.val_folds]
-        self.test_splits = [self.data.y.index.get_loc(idx) for idx in test_pats]            
+        self.test_splits = [self.data.y.index.get_loc(idx) for idx in test_pats.index]            
         self.class_weights = []
         for split in self.train_splits:
             self.class_weights.append([len(self.data.y.values[split][self.data.y.values[split]==0]) / np.sum(self.data.y.values[split])])
@@ -470,7 +485,7 @@ class RunModel(object):
 
             self.folds = None
             if self.config['preset_folds']:
-                self.folds = pd.read_pickle(self.data.data_path.joinpath(self.config['preset_fold_file'])
+                self.folds = pd.read_pickle(self.data.data_path.joinpath(self.config['preset_fold_file']))
             else:
                 if len(augments) > 0:
                     x = np.array(range(self.data.len()))
@@ -683,7 +698,6 @@ class RunModel(object):
             batch.x = batch.x.to(self.device, dtype=torch.float)
             batch.y = batch.y.to(self.device, dtype=torch.float)
             batch.edge_index = batch.edge_index.to(self.device, dtype=torch.int64)
-            
             #edge_attr = None
             if batch.edge_attr is not None:
                 batch.edge_attr = batch.edge_attr.to(self.device, dtype=torch.float)
@@ -719,9 +733,15 @@ class RunModel(object):
                         pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical, radiomics=batch.radiomics)
                     else:
                         #pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical)
-                        pred = self.model(x=x, batch=batch.batch, clinical=batch.clinical)
+                        if 'ResNet' in self.model_name:
+                            pred = self.model(x=x, clinical=batch.clinical)
+                        else:
+                            pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical)
                 else:
-                    pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch)
+                    if 'ResNet' in self.model_name:
+                        pred = self.model(x=x, clinical=None)
+                    else:
+                        pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=None)
             loss = self.loss_fn(pred, batch.y)
             total_loss += loss 
            
@@ -849,9 +869,15 @@ class RunModel(object):
                             pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical, radiomics=batch.radiomics)
                         else:
                             #pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical)
-                            pred = self.model(x=x, batch=batch.batch, clinical=batch.clinical)
+                            if 'ResNet' in self.model_name:
+                                pred = self.model(x=x, clinical=batch.clinical)
+                            else:
+                                pred = self.model(x=x, batch=batch.batch, clinical=batch.clinical)
                     else:
-                        pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch)
+                        if 'ResNet' in self.model_name:
+                            pred = self.model(x=x, clinical=None)
+                        else:
+                            pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=None)
 
                 test_loss += self.loss_fn(pred, batch.y)
                 total_pred.extend(pred)
@@ -901,8 +927,8 @@ class RunModel(object):
         self.writer.add_scalars('AP', {f"{data_to_use}_ap": iap}, self.epoch+displace)
 
         if data_to_use == 'val':
-            #if iap > self.best_ap and self.epoch > 40:
-            if (iauc >= self.best_auc or iap >= self.best_ap) and self.epoch > 25:
+            if iauc > self.best_auc and self.epoch > 25:
+            #if (iauc >= self.best_auc or iap >= self.best_ap) and self.epoch > 25:
             #if iap >= self.best_ap and self.epoch > 25:
                 print(f"#################new best model saved###############")
                 if iauc >= self.best_auc:
@@ -910,7 +936,6 @@ class RunModel(object):
                 if iap >= self.best_ap:
                     self.best_ap = iap
                 #self.best_loss = test_loss
-                out_path = os.path.join(self.log_dir, f"best_model_{self.epoch}_{test_loss:0.2f}_{metric_M:>0.2f}_{iauc:>0.2f}.pth")
                 if self.feature_extractor is None:
                     self.best_model = {
                         'model_state_dict': copy.deepcopy(self.model.state_dict()),
@@ -920,6 +945,28 @@ class RunModel(object):
                         'loss': test_loss,}
                 else:
                     self.best_model = {
+                        'model_state_dict': copy.deepcopy(self.model.state_dict()),
+                        'extractor_state_dict': copy.deepcopy(self.feature_extractor.state_dict()),
+                        'optimizer_state_dict': copy.deepcopy(self.optimizer.state_dict()),
+                        'config' : self.config,
+                        'epoch': self.epoch,
+                        'loss': test_loss,}
+        
+            if test_loss <= self.best_loss and self.epoch > 25:
+            #if (iauc >= self.best_auc or iap >= self.best_ap) and self.epoch > 25:
+            #if iap >= self.best_ap and self.epoch > 25:
+                print(f"#################new best loss model saved###############")
+                self.best_loss = test_loss
+                #self.best_loss = test_loss
+                if self.feature_extractor is None:
+                    self.best_model_loss = {
+                        'model_state_dict': copy.deepcopy(self.model.state_dict()),
+                        'optimizer_state_dict': copy.deepcopy(self.optimizer.state_dict()),
+                        'config' : self.config,
+                        'epoch': self.epoch,
+                        'loss': test_loss,}
+                else:
+                    self.best_model_loss = {
                         'model_state_dict': copy.deepcopy(self.model.state_dict()),
                         'extractor_state_dict': copy.deepcopy(self.feature_extractor.state_dict()),
                         'optimizer_state_dict': copy.deepcopy(self.optimizer.state_dict()),
@@ -1143,17 +1190,36 @@ class RunModel(object):
             print(f"-----------------------------------------------------------")
         self.epoch += 1
 
-        if self.best_model is not None:
-             if self.feature_extractor is not None:
-                 self.feature_extractor.load_state_dict(self.best_model['extractor_state_dict'])
-             self.model.load_state_dict(self.best_model['model_state_dict'])
-             self.optimizer.load_state_dict(self.best_model['optimizer_state_dict'])
+        #if self.best_model is not None:
+        #     if self.feature_extractor is not None:
+        #         self.feature_extractor.load_state_dict(self.best_model['extractor_state_dict'])
+        #     self.model.load_state_dict(self.best_model['model_state_dict'])
+        #     self.optimizer.load_state_dict(self.best_model['optimizer_state_dict'])
+        print("##### Max AUC results ########")
         print("Train Total")
         final_train = self.test('train', cross_idx=cross_idx, nest_idx=nest_idx)
         print("Val Total")
         final_val = self.test('val', cross_idx=cross_idx, nest_idx=nest_idx)
         print("Test")
         final_test = self.test('test', cross_idx=cross_idx)
+        out_csv.append(f"########### max AUC model #############")
+        out_csv.append(f"       loss, AP, AUC, SEN, SPE\n")
+        out_csv.append(f"Train: {final_train[0]}\n")
+        out_csv.append(f"Val: {final_val[0]}\n")
+        out_csv.append(f"Test: {final_test[0]}\n")
+        if self.best_model_loss is not None:
+             if self.feature_extractor is not None:
+                 self.feature_extractor.load_state_dict(self.best_model_loss['extractor_state_dict'])
+             self.model.load_state_dict(self.best_model_loss['model_state_dict'])
+             self.optimizer.load_state_dict(self.best_model_loss['optimizer_state_dict'])
+        print("##### Min Loss results ########")
+        print("Train Total")
+        final_train = self.test('train', cross_idx=cross_idx, nest_idx=nest_idx)
+        print("Val Total")
+        final_val = self.test('val', cross_idx=cross_idx, nest_idx=nest_idx)
+        print("Test")
+        final_test = self.test('test', cross_idx=cross_idx)
+        out_csv.append(f"########### min Loss model #############")
         out_csv.append(f"       loss, AP, AUC, SEN, SPE\n")
         out_csv.append(f"Train: {final_train[0]}\n")
         out_csv.append(f"Val: {final_val[0]}\n")
@@ -1178,6 +1244,7 @@ class RunModel(object):
                             'model_name': self.model.__class__.__name__}, os.path.join(self.log_dir, model_name))
         else:
             torch.save(self.best_model, os.path.join(self.log_dir, model_name))
+            torch.save(self.best_model_loss, os.path.join(self.log_dir, f"best_model_loss_{cross_idx}.pth"))
 
         print("Done")
         out_csv.append(f"{self.config}\n")

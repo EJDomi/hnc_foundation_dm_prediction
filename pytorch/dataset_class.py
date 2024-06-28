@@ -9,7 +9,7 @@ from tqdm.auto import tqdm
 from scipy.ndimage import center_of_mass
 
 import SimpleITK as sitk
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from skimage.transform import rotate
 from skimage.util import random_noise
 
@@ -48,6 +48,95 @@ class DatasetGeneratorImage(Dataset):
         elif self.dataset_name == 'RADCURE':
             self.data_path = Path('../../data/RADCURE')
             self.patient_skip = [
+'RADCURE-0321',
+'RADCURE-0341',
+'RADCURE-0346',
+'RADCURE-0401',
+'RADCURE-0425',
+'RADCURE-0448',
+'RADCURE-0457',
+'RADCURE-0460',
+'RADCURE-0492',
+'RADCURE-0551',
+'RADCURE-0575',
+'RADCURE-0872',
+'RADCURE-0896',
+'RADCURE-0974',
+'RADCURE-0988',
+'RADCURE-1088',
+'RADCURE-1127',
+'RADCURE-1248',
+'RADCURE-1251',
+'RADCURE-1267',
+'RADCURE-1329',
+'RADCURE-1384',
+'RADCURE-1423',
+'RADCURE-1595',
+'RADCURE-1623',
+'RADCURE-1634',
+'RADCURE-1659',
+'RADCURE-1686',
+'RADCURE-1773',
+'RADCURE-1834',
+'RADCURE-1921',
+'RADCURE-1980',
+'RADCURE-2007',
+'RADCURE-2045',
+'RADCURE-2064',
+'RADCURE-2072',
+'RADCURE-2147',
+'RADCURE-2166',
+'RADCURE-2245',
+'RADCURE-2254',
+'RADCURE-2274',
+'RADCURE-2278',
+'RADCURE-2304',
+'RADCURE-2327',
+'RADCURE-2510',
+'RADCURE-2558',
+'RADCURE-2565',
+'RADCURE-2619',
+'RADCURE-2705',
+'RADCURE-2775',
+'RADCURE-2787',
+'RADCURE-2821',
+'RADCURE-2957',
+'RADCURE-2983',
+'RADCURE-3009',
+'RADCURE-3057',
+'RADCURE-3074',
+'RADCURE-3076',
+'RADCURE-3088',
+'RADCURE-3112',
+'RADCURE-3130',
+'RADCURE-3141',
+'RADCURE-3306',
+'RADCURE-3388',
+'RADCURE-3394',
+'RADCURE-3413',
+'RADCURE-3438',
+'RADCURE-3571',
+'RADCURE-3594',
+'RADCURE-3611',
+'RADCURE-3618',
+'RADCURE-3659',
+'RADCURE-3682',
+'RADCURE-3693',
+'RADCURE-3714',
+'RADCURE-3720',
+'RADCURE-3742',
+'RADCURE-3753',
+'RADCURE-3786',
+'RADCURE-3795',
+'RADCURE-3808',
+'RADCURE-3851',
+'RADCURE-3853',
+'RADCURE-3862',
+'RADCURE-3898',
+'RADCURE-3900',
+'RADCURE-3907',
+'RADCURE-4011',
+'RADCURE-4075',
                 ]
         elif self.dataset_name == 'Combined':
             self.data_path = Path('../../data/Combined')
@@ -193,12 +282,18 @@ class DatasetGeneratorImage(Dataset):
             #    patches_reorder = patches[-1:]
             #    patches_reorder.extend(patches[:-1])
             #    patches = patches_reorder
-    
+            #if not np.any(['GTVp' in str(patch) for patch in patches]):
+            #    print(f"skipping {pat}")
+            #    continue
             if 'rotation' in full_pat:
                 angle = self.rng_rotate.integers(-30, high=30)
             patch_list = []
             for i, patch in enumerate(patches):
                 patch_name = '_'.join(patch.as_posix().split('/')[-1].split('_')[1:]).replace('.nii.gz','')
+                if 'GTVp' not in patch_name:
+                    continue
+                if 'GTVp2' in patch_name:
+                    continue
                 #if i > 0: continue
                 patch_list.append(patch_name)
 
@@ -223,9 +318,14 @@ class DatasetGeneratorImage(Dataset):
 
                 if self.pre_transform is not None:
                     if self.pre_transform == 'MinMax':
-                        patch_std = (patch_array - patch_array.min()) / (patch_array.max() - patch_array.min())
+                        patch_std = (patch_array - 500.) / 1000.
                         patch_scaled = patch_std * (1 - (-1)) + (-1)
                         patch_scaled = np.where(struct_array, patch_scaled, 0)
+
+                    elif self.pre_transform == 'ZScore':
+                        patch_scaled = (patch_array - patch_array.mean()) / patch_array.std()
+                        patch_scaled = np.where(struct_array, patch_scaled, 0)
+
                     else:
                         raise Exception(f"pre_transform is set to {self.pre_transform}, but it is not implemented")
                 else:
@@ -251,11 +351,6 @@ class DatasetGeneratorImage(Dataset):
                 graph_array.append(np.expand_dims(patch_scaled, 0))
 
             graph_array = np.array(graph_array)
-
-            if 'ResNet' in self.config['model_name']:
-                
-                shape = graph_array.shape
-                graph_array = np.pad(graph_array, ((0, 15-shape[0]), (0,0),(0,0),(0,0),(0,0)), 'constant', constant_values=0.)
 
             graph_array = torch.tensor(graph_array, dtype=torch.float)
 
@@ -460,7 +555,7 @@ class DatasetGeneratorBoth(Dataset):
 
                 if self.pre_transform is not None:
                     if self.pre_transform == 'MinMax':
-                        patch_std = (patch_array - patch_array.min()) / (patch_array.max() - patch_array.min())
+                        patch_std = (patch_array - 500) / (500 - (-500))
                         patch_scaled = patch_std * (1 - (-1)) + (-1)
 
 

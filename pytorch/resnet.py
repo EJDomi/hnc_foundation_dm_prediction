@@ -168,7 +168,7 @@ class ResNet(nn.Module):
 
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
-        if self.n_clinical is not None:
+        if clinical is not None:
             x = torch.cat((x, clinical), 1)
             x = self.classify(x)
             x = x.squeeze()
