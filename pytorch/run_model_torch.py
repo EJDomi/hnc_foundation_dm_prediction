@@ -439,7 +439,7 @@ class RunModel(object):
         y = self.data.y.iloc[x] 
         self.folds = None
         if self.config['preset_folds']:
-            self.folds = pd.read_pickle(self.data.data_path.joinpath(self.config['preset_fold_file'])
+            self.folds = pd.read_pickle(self.data.data_path.joinpath(self.config['preset_fold_file']))
         else:
             self.folds = partition_dataset_classes(x, y, num_partitions=5, shuffle=True, seed=self.config['seed'])
             with open(self.data.data_path.joinpath(self.config['preset_fold_file']), 'wb') as f:
@@ -470,7 +470,7 @@ class RunModel(object):
 
             self.folds = None
             if self.config['preset_folds']:
-                self.folds = pd.read_pickle(self.data.data_path.joinpath(self.config['preset_fold_file'])
+                self.folds = pd.read_pickle(self.data.data_path.joinpath(self.config['preset_fold_file']))
             else:
                 if len(augments) > 0:
                     x = np.array(range(self.data.len()))
