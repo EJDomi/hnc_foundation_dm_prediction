@@ -1,16 +1,16 @@
 #!/usr/bin/env python
 from pathlib import Path
 import random
+from math import floor
 import numpy as np
 import pandas as pd
 
 from tqdm.auto import tqdm
 
-from scipy.ndimage import center_of_mass
+from scipy.ndimage import center_of_mass, rotate
 
 import SimpleITK as sitk
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-from skimage.transform import rotate
 from skimage.util import random_noise
 
 from hnc_project import data_prep as dp
@@ -161,6 +161,7 @@ class DatasetGeneratorImage(Dataset):
 
         self.rng_noise = np.random.default_rng(42)
         self.rng_rotate = np.random.default_rng(42)
+        self.rng_rotate_axis = np.random.default_rng(42)
            
         if self.config['use_clinical']:
             self.clinical_features = pd.read_pickle(clinical_data)
@@ -168,8 +169,8 @@ class DatasetGeneratorImage(Dataset):
             self.clinical_features = None
 
         if self.dataset_name == 'Combined': 
-            labels_hnscc = dp.retrieve_patients(self.data_path, dataset='HNSCC')
-            labels_utsw = dp.retrieve_patients(self.data_path, dataset='UTSW_HNC')
+            labels_hnscc = dp.retrieve_patients(self.data_path.as_posix(), dataset='HNSCC')
+            labels_utsw = dp.retrieve_patients(self.data_path.as_posix(), dataset='UTSW_HNC')
             y_hnscc = labels_hnscc.loc[[pat for pat in self.patients if 'HNSCC' in pat]]
             y_hnscc = y_hnscc['has_dm'] & (y_hnscc['survival_dm'] < self.years)
             
@@ -177,7 +178,7 @@ class DatasetGeneratorImage(Dataset):
             y_utsw = y_utsw.notna() & (y_utsw < self.years) & (y_utsw > 0)
             self.y = pd.concat([y_hnscc, y_utsw])
         else:
-            labels = dp.retrieve_patients(self.data_path, dataset=self.dataset_name)
+            labels = dp.retrieve_patients(self.data_path.as_posix(), dataset=self.dataset_name)
         if self.dataset_name == 'HNSCC':
             self.y_source = labels.loc[self.patients]
             self.y = self.y_source['has_dm'] & (self.y_source['survival_dm'] < self.years)
@@ -207,14 +208,15 @@ class DatasetGeneratorImage(Dataset):
             if 'rotation' in self.config['augments']:
                 for rot in range(self.config['n_rotations']):
                     aug_rot_pats = aug_pats.copy(deep=True)
-                    aug_rot_pats.index = aug_pats.index + f"_rotation_{rot}"
+                    aug_rot_pats.index = aug_pats.index + f"_rotation_{rot+1}"
                     self.patients.extend(aug_rot_pats.index)
                     
                     self.y = pd.concat([self.y, aug_rot_pats])
-                if self.config['positive_increase'] > 0:
-                    for rot in range(self.config['positive_increase']):
+                if self.config['balance_classes']:
+                    ratio_classes = int(floor(len(self.y[self.y==0]) / len(self.y[self.y==1])))
+                    for rot in range(ratio_classes):
                         aug_rot_pats = aug_pos_pats.copy(deep=True)
-                        aug_rot_pats.index = aug_pos_pats.index + f"_rotation_pos_{rot}"
+                        aug_rot_pats.index = aug_pos_pats.index + f"_rotation_pos_{rot+1}"
                         self.patients.extend(aug_rot_pats.index)
                         self.y = pd.concat([self.y, aug_rot_pats])
                     
@@ -285,8 +287,8 @@ class DatasetGeneratorImage(Dataset):
             #if not np.any(['GTVp' in str(patch) for patch in patches]):
             #    print(f"skipping {pat}")
             #    continue
-            if 'rotation' in full_pat:
-                angle = self.rng_rotate.integers(-30, high=30)
+            #if 'rotation' in full_pat:
+            #    angle = self.rng_rotate.integers(-180, high=180)
             patch_list = []
             for i, patch in enumerate(patches):
                 patch_name = '_'.join(patch.as_posix().split('/')[-1].split('_')[1:]).replace('.nii.gz','')
@@ -295,10 +297,13 @@ class DatasetGeneratorImage(Dataset):
                 if 'GTVp2' in patch_name:
                     continue
                 #if i > 0: continue
+                if 'rotation' in full_pat:
+                    angle = self.rng_rotate.integers(-30, high=31)
+                    rotate_axes = self.rng_rotate_axis.integers(0, high=3)
                 patch_list.append(patch_name)
 
                 edge_idx_map[patch_name] = i
-                patch_image = sitk.ReadImage(patch)
+                patch_image = sitk.ReadImage(patch.as_posix())
                 patch_struct = sitk.ReadImage(str(patch).replace('image', 'Struct'))
 
                 #Image normalization done in SimpleITK
@@ -332,8 +337,8 @@ class DatasetGeneratorImage(Dataset):
                     patch_scaled = patch_array
 
                 if 'rotation' in full_pat:
-                    patch_scaled = self.apply_rotation(patch_scaled, angle)
-                    struct_array = self.apply_rotation(struct_array, angle)
+                    patch_scaled = self.apply_rotation(patch_scaled, angle, rotate_axes)
+                    struct_array = self.apply_rotation(struct_array, angle, rotate_axes)
 
                 if 'noise' in full_pat:
                     patch_scaled = self.apply_noise(patch_scaled)
@@ -410,8 +415,9 @@ class DatasetGeneratorImage(Dataset):
         return random_noise(arr, mode='gaussian', seed=self.rng_noise)
 
 
-    def apply_rotation(self, arr, angle):
-        arr = rotate(arr, angle, preserve_range=True)
+    def apply_rotation(self, arr, angle, rotate_axes):
+        axis_tuples = [(0,1), (0,2), (1,2)]
+        arr = rotate(arr, angle, axes=axis_tuples[rotate_axes], reshape=False)
         return arr
 
 

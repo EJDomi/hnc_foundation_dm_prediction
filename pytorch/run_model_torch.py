@@ -198,9 +198,13 @@ class RunModel(object):
         elif self.model_name == 'CNN':
             self.model = CNN(self.config['n_channels'], self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
-        elif self.model_name == 'ResNet':
-            self.model = resnet50(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
-            #self.model = resnet101(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+        elif 'ResNet' in self.model_name:
+            if '18' in self.model_name:
+                self.model = resnet18(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+            elif '50' in self.model_name:
+                self.model = resnet50(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+            else:
+                self.model = resnet34(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
         elif self.model_name == 'GraphAgResNet':
             self.model = ga.resnet101(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
             
@@ -952,7 +956,7 @@ class RunModel(object):
                         'epoch': self.epoch,
                         'loss': test_loss,}
         
-            if test_loss <= self.best_loss and self.epoch > 25:
+            if test_loss <= self.best_loss and self.epoch > 10:
             #if (iauc >= self.best_auc or iap >= self.best_ap) and self.epoch > 25:
             #if iap >= self.best_ap and self.epoch > 25:
                 print(f"#################new best loss model saved###############")
@@ -1181,7 +1185,7 @@ class RunModel(object):
             if self.config['lr_sched']:
                 print('sched step')
                 #### 0 - loss; 1 - ap; 2 - auc; 3 - sen; 4 - spe
-                self.lr_sched.step(val_results[0][2])   
+                self.lr_sched.step(val_results[0][0])   
                 # for running on unix/linux
                 print(f"learning rate: {self.lr_sched.get_last_lr()}")
                 #self.lr_sched.step()   
