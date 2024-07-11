@@ -292,10 +292,10 @@ class DatasetGeneratorImage(Dataset):
             patch_list = []
             for i, patch in enumerate(patches):
                 patch_name = '_'.join(patch.as_posix().split('/')[-1].split('_')[1:]).replace('.nii.gz','')
-                if 'GTVp' not in patch_name:
-                    continue
-                if 'GTVp2' in patch_name:
-                    continue
+                #if 'GTVp' not in patch_name:
+                #    continue
+                #if 'GTVp2' in patch_name:
+                #    continue
                 #if i > 0: continue
                 if 'rotation' in full_pat:
                     angle = self.rng_rotate.integers(-30, high=31)

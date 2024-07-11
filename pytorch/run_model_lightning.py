@@ -628,30 +628,30 @@ class RunModel(object):
 
     def set_train_loader(self):
         if self.nested_cross_val:
-            self.train_nested_dataloaders = [[DataLoader(self.data[nest], batch_size=self.batch_size, drop_last=True, shuffle=True, pin_memory=True, persistent_workers=False, num_workers=19) for nest in fold] for fold in self.nested_train_splits]
+            self.train_nested_dataloaders = [[DataLoader(self.data[nest], batch_size=self.batch_size, drop_last=True, shuffle=True, pin_memory=True) for nest in fold] for fold in self.nested_train_splits]
         elif self.cross_val:
-            self.train_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, drop_last=(len(self.train_splits[idx])%2<2), shuffle=True, pin_memory=True, persistent_workers=False, num_workers=19) for idx, fold in enumerate(self.train_splits)]
+            self.train_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, drop_last=(len(self.train_splits[idx])%2<2), shuffle=True, pin_memory=True) for idx, fold in enumerate(self.train_splits)]
         else:
-            self.train_dataloader = DataLoader(self.data[self.idx_train], batch_size=self.batch_size, shuffle=True, pin_memory=True, persistent_workers=False, num_workers=19)
+            self.train_dataloader = DataLoader(self.data[self.idx_train], batch_size=self.batch_size, shuffle=True, pin_memory=True)
 
 
     def set_val_loader(self):
         if self.nested_cross_val:
-            self.val_nested_dataloaders = [[DataLoader(self.data[nest], batch_size=self.batch_size, shuffle=False, pin_memory=True, persistent_workers=False, num_workers=19) for nest in fold] for fold in self.nested_val_splits]
+            self.val_nested_dataloaders = [[DataLoader(self.data[nest], batch_size=self.batch_size, shuffle=False, pin_memory=True) for nest in fold] for fold in self.nested_val_splits]
         elif self.cross_val:
-            self.val_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, shuffle=False, pin_memory=True, persistent_workers=False, num_workers=19) for fold in self.val_splits]
+            self.val_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, shuffle=False, pin_memory=True) for fold in self.val_splits]
         else:
-            self.val_dataloader = DataLoader(self.data[self.idx_val], batch_size=self.batch_size, shuffle=False, pin_memory=True, persistent_workers=False, num_workers=19)
+            self.val_dataloader = DataLoader(self.data[self.idx_val], batch_size=self.batch_size, shuffle=False, pin_memory=True)
 
 
     def set_test_loader(self):
         if self.config['challenge']:
-            self.test_cross_dataloaders = [DataLoader(self.data[self.test_splits], batch_size=self.batch_size, shuffle=False, pin_memory=True, persistent_workers=False, num_workers=19) for fold in range(5)]
+            self.test_cross_dataloaders = [DataLoader(self.data[self.test_splits], batch_size=self.batch_size, shuffle=False, pin_memory=True) for fold in range(5)]
 
         elif self.cross_val:
-            self.test_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, shuffle=False, pin_memory=True, persistent_workers=False, num_workers=19) for fold in self.test_splits]
+            self.test_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, shuffle=False, pin_memory=True) for fold in self.test_splits]
         else:
-            self.test_dataloader = DataLoader(self.data[self.idx_test], batch_size=self.batch_size, shuffle=False, pin_memory=True, persistent_workers=False, num_workers=19)
+            self.test_dataloader = DataLoader(self.data[self.idx_test], batch_size=self.batch_size, shuffle=False, pin_memory=True)
 
 
     def set_loss_fn(self, cross_idx=None):
