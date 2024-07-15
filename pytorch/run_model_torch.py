@@ -198,9 +198,13 @@ class RunModel(object):
         elif self.model_name == 'CNN':
             self.model = CNN(self.config['n_channels'], self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
-        elif self.model_name == 'ResNet':
-            self.model = resnet50(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
-            #self.model = resnet101(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+        elif 'ResNet' in self.model_name:
+            if '18' in self.model_name:
+                self.model = resnet18(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+            elif '50' in self.model_name:
+                self.model = resnet50(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+            else:
+                self.model = resnet34(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
         elif self.model_name == 'GraphAgResNet':
             self.model = ga.resnet101(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
             
@@ -624,30 +628,30 @@ class RunModel(object):
 
     def set_train_loader(self):
         if self.nested_cross_val:
-            self.train_nested_dataloaders = [[DataLoader(self.data[nest], batch_size=self.batch_size, drop_last=True, shuffle=True, pin_memory=True) for nest in fold] for fold in self.nested_train_splits]
+            self.train_nested_dataloaders = [[DataLoader(self.data[nest], batch_size=self.batch_size, drop_last=True, shuffle=True, pin_memory=True, persistent_workers=False, num_workers=19) for nest in fold] for fold in self.nested_train_splits]
         elif self.cross_val:
-            self.train_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, drop_last=(len(self.train_splits[idx])%2<2), shuffle=True, pin_memory=True) for idx, fold in enumerate(self.train_splits)]
+            self.train_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, drop_last=(len(self.train_splits[idx])%2<2), shuffle=True, pin_memory=True, persistent_workers=False, num_workers=19) for idx, fold in enumerate(self.train_splits)]
         else:
-            self.train_dataloader = DataLoader(self.data[self.idx_train], batch_size=self.batch_size, shuffle=True, pin_memory=True)
+            self.train_dataloader = DataLoader(self.data[self.idx_train], batch_size=self.batch_size, shuffle=True, pin_memory=True, persistent_workers=False, num_workers=19)
 
 
     def set_val_loader(self):
         if self.nested_cross_val:
-            self.val_nested_dataloaders = [[DataLoader(self.data[nest], batch_size=self.batch_size, shuffle=False, pin_memory=True) for nest in fold] for fold in self.nested_val_splits]
+            self.val_nested_dataloaders = [[DataLoader(self.data[nest], batch_size=self.batch_size, shuffle=False, pin_memory=True, persistent_workers=False, num_workers=19) for nest in fold] for fold in self.nested_val_splits]
         elif self.cross_val:
-            self.val_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, shuffle=False, pin_memory=True) for fold in self.val_splits]
+            self.val_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, shuffle=False, pin_memory=True, persistent_workers=False, num_workers=19) for fold in self.val_splits]
         else:
-            self.val_dataloader = DataLoader(self.data[self.idx_val], batch_size=self.batch_size, shuffle=False, pin_memory=True)
+            self.val_dataloader = DataLoader(self.data[self.idx_val], batch_size=self.batch_size, shuffle=False, pin_memory=True, persistent_workers=False, num_workers=19)
 
 
     def set_test_loader(self):
         if self.config['challenge']:
-            self.test_cross_dataloaders = [DataLoader(self.data[self.test_splits], batch_size=self.batch_size, shuffle=False, pin_memory=True) for fold in range(5)]
+            self.test_cross_dataloaders = [DataLoader(self.data[self.test_splits], batch_size=self.batch_size, shuffle=False, pin_memory=True, persistent_workers=False, num_workers=19) for fold in range(5)]
 
         elif self.cross_val:
-            self.test_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, shuffle=False, pin_memory=True) for fold in self.test_splits]
+            self.test_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, shuffle=False, pin_memory=True, persistent_workers=False, num_workers=19) for fold in self.test_splits]
         else:
-            self.test_dataloader = DataLoader(self.data[self.idx_test], batch_size=self.batch_size, shuffle=False, pin_memory=True)
+            self.test_dataloader = DataLoader(self.data[self.idx_test], batch_size=self.batch_size, shuffle=False, pin_memory=True, persistent_workers=False, num_workers=19)
 
 
     def set_loss_fn(self, cross_idx=None):
@@ -952,7 +956,7 @@ class RunModel(object):
                         'epoch': self.epoch,
                         'loss': test_loss,}
         
-            if test_loss <= self.best_loss:
+            if test_loss <= self.best_loss and self.epoch > 10:
             #if (iauc >= self.best_auc or iap >= self.best_ap) and self.epoch > 25:
             #if iap >= self.best_ap and self.epoch > 25:
                 print(f"#################new best loss model saved###############")

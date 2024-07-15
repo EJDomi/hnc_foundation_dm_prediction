@@ -41,6 +41,7 @@ model_config = {
                 "n_rotations": 10,
                "num_deep_layers": 28,
                "positive_increase": 5,
+               "balance_classes": False,
                 "max_nodes": { 'HNSCC': 15,
                              },
                 "clinical_mean": {'Win42': [[58.1292, 68.8017],
