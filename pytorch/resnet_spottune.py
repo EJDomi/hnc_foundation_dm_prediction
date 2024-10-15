@@ -24,20 +24,20 @@ class BasicBlock(nn.Module):
 
     def forward(self, x):
         residual = x
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
 
-        x = self.conv2(x)
-        x = self.bn2(x)
+        out = self.conv2(out)
+        out = self.bn2(out)
 
         if self.stride > 1 or self.dilation > 1:
             residual = self.downsample(residual)
             residual = self.bn0(residual)
-        x += residual
-        x = self.relu(x)
+        out += residual
+        out = self.relu(out)
 
-        return x
+        return out
 
 
 class Bottleneck(nn.Module):
@@ -67,30 +67,30 @@ class Bottleneck(nn.Module):
 
     def forward(self, x):
         residual = x
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
 
-        x = self.conv2(x)
-        x = self.bn2(x)
-        x = self.relu(x)
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.relu(out)
 
-        x = self.conv3(x)
-        x = self.bn3(x)
+        out = self.conv3(out)
+        out = self.bn3(out)
 
         if self.downsample:
             residual = self.downsample(residual)
 
-        x += residual
-        x = self.relu(x)
+        out += residual
+        out = self.relu(out)
 
-        return x
+        return out
 
 
 
-class ResNet(nn.Module):
+class MainResNet(nn.Module):
     def __init__(self, block, layers, in_channels=3, num_classes=1, dropout=0.0):
-        super(ResNet, self).__init__()
+        super(MainResNet, self).__init__()
         self.expansion = 4
         self.factor = 2
         self.conv1 = nn.Conv3d(in_channels, 64, kernel_size=(7,7,7), stride=2, padding=3, bias=False)
@@ -274,7 +274,7 @@ class SpotTune(nn.Module):
     def __init__(self, in_channels=2, num_classes=64, dropout=0.0):
         super(SpotTune, self).__init__()
 
-        self.resnet = ResNet(Bottleneck, [3,4,6,3], in_channels=in_channels, num_classes=num_classes, dropout=dropout)
+        self.resnet = MainResNet(Bottleneck, [3,4,6,3], in_channels=in_channels, num_classes=num_classes, dropout=dropout)
         self.agent = Agent(BasicBlock, [1,1,1,1], in_channels=in_channels, num_classes=(sum(self.resnet.layers)*2), dropout=dropout)
 
 
