@@ -54,7 +54,7 @@ class RunModel(object):
         self.config = config
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.n_classes = config['n_classes']
-        self.n_channels = config['n_channels']
+        self.n_in_channels = config['n_in_channels']
         self.seed = config['seed']
         self.class_weights = None
         self.data_type = config['data_type']
@@ -69,11 +69,11 @@ class RunModel(object):
         self.augment = config['augment']
         self.external_data = None
 
-        if f"{self.config['dataset_name']}{self.seed}" in self.config['clinical_mean'].keys():
+        if f"{self.config['dataset_name']}" in self.config['clinical_means'].keys():
             print("Using stored mean and std")
-            seed_key = f"{self.config['dataset_name']}{self.seed}"
-            self.clinical_mean = torch.tensor(self.config['clinical_mean'][seed_key], dtype=torch.float).to(self.device)
-            self.clinical_std = torch.tensor(self.config['clinical_std'][seed_key], dtype=torch.float).to(self.device)
+            seed_key = f"{self.config['dataset_name']}"
+            self.clinical_mean = torch.tensor(self.config['clinical_means'][seed_key], dtype=torch.float).to(self.device)
+            self.clinical_std = torch.tensor(self.config['clinical_stds'][seed_key], dtype=torch.float).to(self.device)
         else:
             self.clinical_mean = None
             self.clinical_std = None
@@ -86,7 +86,7 @@ class RunModel(object):
             self.radiomics_std = None
  
         if self.n_classes == 1:
-            self.loss_fn = nn.BCEWithLogitsLoss().to(self.device)
+            self.loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([self.config['class_weights']])).to(self.device)
             #self.loss_fn = torchvision.ops.sigmoid_focal_loss().to(self.device)
             self.acc_fn = torchmetrics.classification.BinaryAccuracy(threshold=0.5).to(self.device)
             self.auc_fn = torchmetrics.classification.BinaryAUROC().to(self.device)
@@ -147,71 +147,71 @@ class RunModel(object):
 
         if self.feature_extractor is not None:
             if 'DenseNet' in self.extractor_name:
-                in_channels = self.config['n_extracted_features']
+                in_in_channels = self.config['n_extracted_features']
             elif 'SpotTune' in self.extractor_name:
-                in_channels = self.feature_extractor.resnet.classify.out_features
+                in_in_channels = self.feature_extractor.resnet.classify.out_features
             else:
-                in_channels = self.feature_extractor.classify.out_features
+                in_in_channels = self.feature_extractor.classify.out_features
         else:
-            in_channels = 64
+            in_in_channels = 64
 
         #if 'both' in self.data_type:
-        #    in_channels += len(self.data[0].radiomics[0])
+        #    in_in_channels += len(self.data[0].radiomics[0])
 
         if self.model_name == 'SimpleGCN':
-            self.model = SimpleGCN(self.data.num_node_features, self.config['n_hidden_channels'], self.n_classes, self.config['dropout']).to(self.device)
+            self.model = SimpleGCN(self.data.num_node_features, self.config['n_hidden_in_channels'], self.n_classes, self.config['dropout']).to(self.device)
             print(f"{self.model_name} set")
         elif self.model_name == 'ClinicalGatedGCN':
             if 'image' in self.config['data_type']:
-                self.model = ClinicalGatedGCN(in_channels, self.config['n_hidden_channels'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
+                self.model = ClinicalGatedGCN(in_in_channels, self.config['n_hidden_in_channels'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
             elif self.config['data_type'] == 'both':
-                self.model = ClinicalGatedGCN(in_channels, self.config['n_hidden_channels'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
+                self.model = ClinicalGatedGCN(in_in_channels, self.config['n_hidden_in_channels'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
             else:
-                self.model = ClinicalGatedGCN(self.data.num_node_features, self.config['n_hidden_channels'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
+                self.model = ClinicalGatedGCN(self.data.num_node_features, self.config['n_hidden_in_channels'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
 
         elif self.model_name == 'GatedGCN':
             if 'image' in self.config['data_type']:
-                self.model = GatedGCN(in_channels, self.config['n_hidden_channels'], self.n_classes, self.edge_dim, self.config['dropout']).to(self.device)
+                self.model = GatedGCN(in_in_channels, self.config['n_hidden_in_channels'], self.n_classes, self.edge_dim, self.config['dropout']).to(self.device)
             else:
-                self.model = GatedGCN(self.data._data.num_node_features, self.config['n_hidden_channels'], self.n_classes, self.edge_dim, self.config['dropout']).to(self.device) 
+                self.model = GatedGCN(self.data._data.num_node_features, self.config['n_hidden_in_channels'], self.n_classes, self.edge_dim, self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
 
         elif self.model_name == 'EXTGatedResNetGCN':
-            self.model = GatedGCN(in_channels, self.config['n_hidden_channels'], self.n_classes, self.edge_dim, self.config['dropout']).to(self.device)
+            self.model = GatedGCN(in_in_channels, self.config['n_hidden_in_channels'], self.n_classes, self.edge_dim, self.config['dropout']).to(self.device)
 
         elif self.model_name == 'myGraphUNet':
-            self.model = myGraphUNet(in_channels, self.config['n_hidden_channels'], self.n_classes, self.n_clinical, self.config['dropout']).to(self.device)
+            self.model = myGraphUNet(in_in_channels, self.config['n_hidden_in_channels'], self.n_classes, self.n_clinical, self.config['dropout']).to(self.device)
             print(f"{self.model_name} does not use edge_attr, setting with_edge_attr to False")
             self.with_edge_attr = False
             self.config['with_edge_attr'] = False 
             print(f"{self.model_name} set")
 
         elif self.model_name == 'DeepGCN':
-            self.model = DeepGCN(in_channels, self.config['n_hidden_channels'], self.config['num_deep_layers'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
+            self.model = DeepGCN(in_in_channels, self.config['n_hidden_in_channels'], self.config['num_deep_layers'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
 
         elif self.model_name == 'AltDeepGCN':
-            in_channels = len(self.data[0].radiomics[0]) + in_channels
-            self.model = AltDeepGCN(in_channels, self.config['n_hidden_channels'], self.config['num_deep_layers'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
+            in_in_channels = len(self.data[0].radiomics[0]) + in_in_channels
+            self.model = AltDeepGCN(in_in_channels, self.config['n_hidden_in_channels'], self.config['num_deep_layers'], self.n_classes, self.n_clinical, self.edge_dim, self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
         elif self.model_name == 'CNN':
-            self.model = CNN(self.config['n_channels'], self.config['dropout']).to(self.device) 
+            self.model = CNN(self.config['n_in_channels'], self.config['dropout']).to(self.device) 
             print(f"{self.model_name} set")
         elif 'ResNet' in self.model_name:
             if '18' in self.model_name:
-                self.model = resnet18(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+                self.model = resnet18(n_classes=self.n_classes, in_channels=self.n_in_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
             elif '50' in self.model_name:
-                self.model = resnet50(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+                self.model = resnet50(n_classes=self.n_classes, in_channels=self.n_in_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
             else:
-                self.model = resnet34(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+                self.model = resnet34(n_classes=self.n_classes, in_channels=self.n_in_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
         elif self.model_name == 'GraphAgResNet':
-            self.model = ga.resnet101(num_classes=self.n_classes, in_channels=self.n_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
+            self.model = ga.resnet101(n_classes=self.n_classes, in_channels=self.n_in_channels, dropout=self.config['dropout'], n_clinical=self.n_clinical).to(self.device)
             
           
         else:
-            self.model = getattr(tgmodels, self.model_name)(in_channels=self.data.num_node_features, 
-                                                            hidden_channels=self.config['n_hidden_channels'], 
+            self.model = getattr(tgmodels, self.model_name)(in_in_channels=self.data.num_node_features, 
+                                                            hidden_in_channels=self.config['n_hidden_in_channels'], 
                                                             depth=3, 
                                                             #num_layers=3, 
                                                             out_channels=self.n_classes, 
@@ -234,14 +234,14 @@ class RunModel(object):
     def set_feature_extractor(self, transfer=None):
         if self.extractor_name == 'ResNet':
             if '2d' in self.config['data_type']:
-                self.feature_extractor = res2d.resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
+                self.feature_extractor = res2d.resnet101(num_classes=self.config['n_extracted_features'], in_in_channels=self.n_in_channels, dropout=self.config['ext_dropout']).to(self.device)
             else:
-                #self.feature_extractor = resnet18(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
-                #self.feature_extractor = resnet34(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
-                self.feature_extractor = resnet50(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
-                #self.feature_extractor = resnet101(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
-                #self.feature_extractor = resnet152(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
-                #self.feature_extractor = resnet200(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout=self.config['ext_dropout']).to(self.device)
+                #self.feature_extractor = resnet18(num_classes=self.config['n_extracted_features'], in_in_channels=self.n_in_channels, dropout=self.config['ext_dropout']).to(self.device)
+                #self.feature_extractor = resnet34(num_classes=self.config['n_extracted_features'], in_in_channels=self.n_in_channels, dropout=self.config['ext_dropout']).to(self.device)
+                self.feature_extractor = resnet50(num_classes=self.config['n_extracted_features'], in_in_channels=self.n_in_channels, dropout=self.config['ext_dropout']).to(self.device)
+                #self.feature_extractor = resnet101(num_classes=self.config['n_extracted_features'], in_in_channels=self.n_in_channels, dropout=self.config['ext_dropout']).to(self.device)
+                #self.feature_extractor = resnet152(num_classes=self.config['n_extracted_features'], in_in_channels=self.n_in_channels, dropout=self.config['ext_dropout']).to(self.device)
+                #self.feature_extractor = resnet200(num_classes=self.config['n_extracted_features'], in_in_channels=self.n_in_channels, dropout=self.config['ext_dropout']).to(self.device)
             #self.feature_extractor.classify = nn.Identity() 
             self.config['n_extracted_features'] = self.feature_extractor.classify.out_features
 
@@ -262,8 +262,8 @@ class RunModel(object):
                             mod_name = mod_name.replace(name, new)
                     fixed_state[mod_name] = v
 
-                if self.n_channels > 1:
-                    fixed_state['conv1.weight'] = fixed_state['conv1.weight'].repeat(1,self.n_channels,1,1,1)/self.n_channels  
+                if self.n_in_channels > 1:
+                    fixed_state['conv1.weight'] = fixed_state['conv1.weight'].repeat(1,self.n_in_channels,1,1,1)/self.n_in_channels  
 
                 self.feature_extractor.load_state_dict(fixed_state, strict=False)
                 for name, p in self.feature_extractor.named_parameters():
@@ -305,7 +305,7 @@ class RunModel(object):
                     else:
                         fixed_state[name] = w
 
-                fixed_state['conv1.weight'] = fixed_state['conv1.weight'].mean(axis=1).unsqueeze(1).repeat(1,self.n_channels,1,1,1)/self.n_channels
+                fixed_state['conv1.weight'] = fixed_state['conv1.weight'].mean(axis=1).unsqueeze(1).repeat(1,self.n_in_channels,1,1,1)/self.n_in_channels
 
                 self.feature_extractor.load_state_dict(fixed_state, strict=False)
                 for name, p in self.feature_extractor.named_parameters():
@@ -313,12 +313,12 @@ class RunModel(object):
             print(f"feature extractor with transfer learning: {self.config['transfer']} set")
 
         if self.extractor_name == 'DenseNet':
-            self.feature_extractor = DenseNet3d(num_classes=self.config['n_extracted_features'], in_channels=self.n_channels, dropout_p=self.config['ext_dropout']).to(self.device)
+            self.feature_extractor = DenseNet3d(num_classes=self.config['n_extracted_features'], in_in_channels=self.n_in_channels, dropout_p=self.config['ext_dropout']).to(self.device)
             self.feature_extractor.classify = nn.Identity() 
             self.config['n_extracted_features'] = 175
 
         if self.extractor_name == 'SpotTune':
-            self.feature_extractor = SpotTune(num_classes=64, in_channels=self.n_channels, dropout=self.config['dropout']).to(self.device)
+            self.feature_extractor = SpotTune(num_classes=64, in_in_channels=self.n_in_channels, dropout=self.config['dropout']).to(self.device)
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
             initial_state = torch.load('./models/resnet_50.pth', map_location=self.device)['state_dict']
             fixed_state = {}
@@ -340,8 +340,8 @@ class RunModel(object):
                     fixed_state_v2[k] = v
                     fixed_state_v2[k.replace('blocks', 'parallel_blocks')] = v
 
-            if self.n_channels > 1:
-                fixed_state['conv1.weight'] = fixed_state['conv1.weight'].repeat(1,self.n_channels,1,1,1)/self.n_channels  
+            if self.n_in_channels > 1:
+                fixed_state['conv1.weight'] = fixed_state['conv1.weight'].repeat(1,self.n_in_channels,1,1,1)/self.n_in_channels  
 
             self.feature_extractor.load_state_dict(fixed_state, strict=False)
             self.freeze_layers(ignore=['classify', 'parallel_blocks', 'agent']) 
@@ -395,8 +395,8 @@ class RunModel(object):
             locations_file = '../../data/UTSW_HNC/edge_staging/centered_locations_utsw_040324.pkl'
             clinical_data = f"../../data/UTSW_HNC/{self.config['clinical_data']}"
         elif self.config['dataset_name'] == 'RADCURE':
-            #patch_dir = '../../data/RADCURE/Nii_222_50_50_60_Crop'
-            patch_dir = '../../data/RADCURE/Nii_111_75_75_100_Crop'
+            patch_dir = '../../data/RADCURE/Nii_222_80_80_48_Crop'
+            #patch_dir = '../../data/RADCURE/Nii_111_75_75_100_Crop'
             radiomics_dir = None
             edge_file = '../../data/RADCURE/edge_staging/edges_radcure_053024.pkl'
             locations_file = '../../data/RADCURE/edge_staging/centered_locations_radcure_060424.pkl'
@@ -408,12 +408,7 @@ class RunModel(object):
             locations_file = '../../data/Combined/edge_staging/centered_locations_combined.pkl'
             clinical_data = f"../../data/Combined/{self.config['clinical_data']}"
 
-        if self.data_type == 'radiomics':
-            self.data = DatasetGeneratorRadiomics(patch_dir, radiomics_dir, edge_file, locations_file, clinical_data, version, pre_transform=None, config=self.config)
-        elif 'image' in self.data_type:
-            self.data = DatasetGeneratorImage(self.config['dataset_name'], patch_dir, edge_file, locations_file, clinical_data, version, pre_transform=self.scaling_type, config=self.config)
-        elif self.data_type == 'both':
-            self.data = DatasetGeneratorBoth(patch_dir, radiomics_dir, edge_file, locations_file, clinical_data, version, pre_transform=self.scaling_type, config=self.config)
+        self.data = DatasetGeneratorImage(self.config)
 
     def set_external_test(self, patch_dir='../../data/UTSW/Nii_222_50_50_60_Crop', radiomics_dir='../../data/HNSCC/radiomics', edge_file='../../data/UTSW_HNC/edge_staging/edges_utsw_040224.pkl', locations_file='../../data/UTSW_HNC/edge_staging/centered_locations_utsw_040324.pkl', clinical_data='../../data/UTSW_HNC/clinical_features_v2.pkl', version='v1', pre_transform=None):
 
@@ -637,11 +632,11 @@ class RunModel(object):
 
     def set_val_loader(self):
         if self.nested_cross_val:
-            self.val_nested_dataloaders = [[DataLoader(self.data[nest], batch_size=self.batch_size, shuffle=False, pin_memory=True, persistent_workers=False, num_workers=19) for nest in fold] for fold in self.nested_val_splits]
+            self.val_nested_dataloaders = [[DataLoader(self.data[nest], batch_size=self.batch_size, drop_last=True, shuffle=False, pin_memory=True, persistent_workers=False, num_workers=19) for nest in fold] for fold in self.nested_val_splits]
         elif self.cross_val:
-            self.val_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, shuffle=False, pin_memory=True, persistent_workers=False, num_workers=19) for fold in self.val_splits]
+            self.val_cross_dataloaders = [DataLoader(self.data[fold], batch_size=self.batch_size, drop_last=True, shuffle=False, pin_memory=True, persistent_workers=False, num_workers=19) for fold in self.val_splits]
         else:
-            self.val_dataloader = DataLoader(self.data[self.idx_val], batch_size=self.batch_size, shuffle=False, pin_memory=True, persistent_workers=False, num_workers=19)
+            self.val_dataloader = DataLoader(self.data[self.idx_val], batch_size=self.batch_size, drop_last=True, shuffle=False, pin_memory=True, persistent_workers=False, num_workers=19)
 
 
     def set_test_loader(self):
@@ -657,12 +652,14 @@ class RunModel(object):
     def set_loss_fn(self, cross_idx=None):
         if cross_idx is not None:
             if self.n_classes == 1:
-                self.loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(self.class_weights[cross_idx])).to(self.device)
+                #self.loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(self.class_weights[cross_idx])).to(self.device)
+                self.loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([20.])).to(self.device)
             else:
                 self.loss_fn = nn.CrossEntropyLoss().to(pos_weight=torch.tensor(self.class_weights[cross_idx])).to(self.device)
         else:
             if self.n_classes == 1:
-                self.loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(self.class_weights)).to(self.device)
+                #self.loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(self.class_weights)).to(self.device)
+                self.loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([20.])).to(self.device)
             else:
                 self.loss_fn = nn.CrossEntropyLoss().to(pos_weight=torch.tensor(self.class_weights)).to(self.device)
         
@@ -722,6 +719,10 @@ class RunModel(object):
                     batch.clinical = batch.clinical.to(self.device, dtype=torch.float)
                     batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[cross_idx][0]) / self.clinical_std[cross_idx][0]
                     batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[cross_idx][1]) / self.clinical_std[cross_idx][1]
+                    batch.clinical[:, 2] = (batch.clinical[:,2] - self.clinical_mean[cross_idx][2]) / self.clinical_std[cross_idx][2]
+                    batch.clinical[:, 3] = (batch.clinical[:,3] - self.clinical_mean[cross_idx][3]) / self.clinical_std[cross_idx][3]
+                    #batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[0]) / self.clinical_std[0]
+                    #batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[1]) / self.clinical_std[1]
                     if self.data_type == 'both':
                         pred = self.model(x=x, edge_index=batch.edge_index, edge_attr=batch.edge_attr, batch=batch.batch, clinical=batch.clinical, radiomics=batch.radiomics)
                     else:
@@ -733,6 +734,10 @@ class RunModel(object):
                     batch.clinical = batch.clinical.to(self.device, dtype=torch.float)
                     batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[cross_idx][0]) / self.clinical_std[cross_idx][0]
                     batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[cross_idx][1]) / self.clinical_std[cross_idx][1]
+                    batch.clinical[:, 2] = (batch.clinical[:,2] - self.clinical_mean[cross_idx][2]) / self.clinical_std[cross_idx][2]
+                    batch.clinical[:, 3] = (batch.clinical[:,3] - self.clinical_mean[cross_idx][3]) / self.clinical_std[cross_idx][3]
+                    #batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[0]) / self.clinical_std[0]
+                    #batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[1]) / self.clinical_std[1]
                     if self.data_type == 'both':
                         pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical, radiomics=batch.radiomics)
                     else:
@@ -858,6 +863,10 @@ class RunModel(object):
                         batch.clinical = batch.clinical.to(self.device, dtype=torch.float)
                         batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[cross_idx][0]) / self.clinical_std[cross_idx][0]
                         batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[cross_idx][1]) / self.clinical_std[cross_idx][1]
+                        batch.clinical[:, 2] = (batch.clinical[:,2] - self.clinical_mean[cross_idx][2]) / self.clinical_std[cross_idx][2]
+                        batch.clinical[:, 3] = (batch.clinical[:,3] - self.clinical_mean[cross_idx][3]) / self.clinical_std[cross_idx][3]
+                        #batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[0]) / self.clinical_std[0]
+                        #batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[1]) / self.clinical_std[1]
                         if self.data_type == 'both':
                             pred = self.model(x=x, edge_index=batch.edge_index, edge_attr=batch.edge_attr, batch=batch.batch, clinical=batch.clinical, radiomics=batch.radiomics)
                         else:
@@ -869,6 +878,10 @@ class RunModel(object):
                         batch.clinical = batch.clinical.to(self.device, dtype=torch.float)
                         batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[cross_idx][0]) / self.clinical_std[cross_idx][0]
                         batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[cross_idx][1]) / self.clinical_std[cross_idx][1]
+                        batch.clinical[:, 2] = (batch.clinical[:,2] - self.clinical_mean[cross_idx][2]) / self.clinical_std[cross_idx][2]
+                        batch.clinical[:, 3] = (batch.clinical[:,3] - self.clinical_mean[cross_idx][3]) / self.clinical_std[cross_idx][3]
+                        #batch.clinical[:, 0] = (batch.clinical[:,0] - self.clinical_mean[0]) / self.clinical_std[0]
+                        #batch.clinical[:, 1] = (batch.clinical[:,1] - self.clinical_mean[1]) / self.clinical_std[1]
                         if self.data_type == 'both':
                             pred = self.model(x=x, edge_index=batch.edge_index, batch=batch.batch, clinical=batch.clinical, radiomics=batch.radiomics)
                         else:
