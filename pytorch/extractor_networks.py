@@ -2,8 +2,10 @@ import torch
 from torch import nn
 from torch.nn import LeakyReLU, Dropout
 
-from LN_project_repo.pytorch.resnet import * 
-from LN_project_repo.pytorch.densenet import DenseNet3d 
+from hnc_project.pytorch.resnet_lightning import * 
+from hnc_project.pytorch.sgc_cnn import SGC_CNN 
+from hnc_project.pytorch.densenet import DenseNet3d 
+from hnc_project.pytorch.net_swin import SwinTransformer
 
 
 
@@ -26,8 +28,22 @@ def resnet200(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
     return ResNet(blocks, [3,24,36,3], in_channels=in_channels, n_classes=n_classes, dropout=dropout)
 
 def densenet3d(n_classes=1, in_channels=64, dropout = 0.0):
-    return DenseNet3d(n_classes=n_classes, in_channels=in_channels, dropout_p=dropout)
+    return DenseNet3d(num_classes=n_classes, in_channels=in_channels, dropout_p=dropout)
 
+def swin(n_classes=1, in_channels=64, dropout = 0.0):
+    return SwinTransformer(patch_size=2,
+            in_chans=in_channels, 
+            embed_dim=96, 
+            depths=(2,2,4,2),
+            num_heads=(4,4,8,8),
+            window_size=(7,7,7),
+            mlp_ratio=4,
+            qkv_bias=False,
+            drop_rate=dropout,
+            drop_path_rate=0.3,
+            ape=False, spe=False, rpe=True, patch_norm=True, use_checkpoint=False,
+            out_indices=(0,1,2,3),
+            pat_merg_rf=4)
 
 class LNCNN(nn.Module):
     def __init__(self, n_classes, in_channels, dropout):
@@ -64,12 +80,13 @@ class LNCNN(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.flatten = nn.Flatten()
         #self.avgpool = nn.AdaptiveAvgPool3d((1,1,1))
-        self.linear = nn.LazyLinear(out_features=256)
+        # 102752 for 80x80x80
+        self.linear = nn.Linear(102752, 256)
         self.classify = nn.Linear(256, n_classes)
         self.relu = nn.ReLU()
 
 
-    def forward(self, x, edge_index, edge_attr, batch, clinical, radiomics=None):
+    def forward(self, x):
         x = self.cn1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -110,7 +127,6 @@ class LNCNN(nn.Module):
         x = self.relu(x)
         #x = self.avgpool(x)
         x = self.flatten(x)
-        x = torch.cat((x, clinical), 1)
          
         x = self.linear(x)
         x = self.dropout(x)

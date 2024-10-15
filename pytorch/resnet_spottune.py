@@ -91,7 +91,10 @@ class Bottleneck(nn.Module):
 class MainResNet(nn.Module):
     def __init__(self, block, layers, in_channels=3, num_classes=1, dropout=0.0):
         super(MainResNet, self).__init__()
-        self.expansion = 4
+        if block == BasicBlock:
+            self.expansion = 1
+        if block == Bottleneck:
+            self.expansion = 4 
         self.factor = 2
         self.conv1 = nn.Conv3d(in_channels, 64, kernel_size=(7,7,7), stride=2, padding=3, bias=False)
         self.bn1 = nn.BatchNorm3d(64)
@@ -271,12 +274,53 @@ class Agent(nn.Module):
 
 
 class SpotTune(nn.Module):
-    def __init__(self, in_channels=2, num_classes=64, dropout=0.0):
+    def __init__(self, main='main18', in_channels=2, num_classes=64, dropout=0.0):
         super(SpotTune, self).__init__()
 
-        self.resnet = MainResNet(Bottleneck, [3,4,6,3], in_channels=in_channels, num_classes=num_classes, dropout=dropout)
+        weight_map = {
+            'main18': 'resnet_18.pth',
+            'main34': 'resnet_34.pth',
+            'main50': 'resnet_50.pth',
+            'main101': 'resnet_101.pth',
+            'main152': 'resnet_152.pth',
+            'main200': 'resnet_200.pth',
+        }
+
+        self.resnet = globals()[main](n_classes=num_classes, in_channels=in_channels, dropout=dropout)
         self.agent = Agent(BasicBlock, [1,1,1,1], in_channels=in_channels, num_classes=(sum(self.resnet.layers)*2), dropout=dropout)
 
+        initial_state = torch.load(os.path.join('./weights', weight_map[main]))['state_dict']
+        fixed_state = OrderedDict()
+        for k, v in initial_state.items():
+            if 'layer' in k:
+                mod_name = k.replace('module', 'blocks')
+            else:
+                mod_name = k.replace('module.', '')
+            for name, new in layer_loop.items():
+                if name in mod_name:
+                    mod_name = mod_name.replace(name, new)
+            for name, new in layer_loop_downsample.items():
+                if name in mod_name:
+                    mod_name = mod_name.replace(name, new)
+            fixed_state[mod_name] = v
+
+        fixed_state_v2 = OrderedDict()
+        for k, v in fixed_state.items():
+            fixed_state_v2[k] = v
+            fixed_state_v2[k.replace('blocks', 'parallel_blocks')] = v
+
+        if self.n_channels > 1:
+            fixed_state_v2['conv1.weight'] = fixed_state['conv1.weight'].repeat(1,self.n_channels,1,1,1)/self.n_channels
+
+        self.resnet.load_state_dict(fixed_state_v2, strict=False)
+        self.freeze_layers(ignore=['classify', 'parallel_blocks'])
+        for name, p in self.resnet.named_parameters():
+            if any([i in name for i in ['classify', 'parallel_blocks']]):
+                p.requires_grad=True
+            else:
+                p.requires_grad=False
+
+         
 
     def forward(self, x):
         probs = self.agent(x)
@@ -314,11 +358,48 @@ class SpotTune(nn.Module):
         return (y_hard - y).detach() + y
 
 
-def resnet_spottune(num_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
-    return ResNet(blocks, [3,4,6,3], in_channels=in_channels, num_classes=num_classes, dropout=dropout)
+def main18(n_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock):
+    return ResNet(blocks, [2,2,2,2], in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+
+def main34(n_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock):
+    return ResNet(blocks, [3,4,6,3], in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+
+def main50(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
+    return ResNet(blocks, [3,4,6,3], in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+
+def main101(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
+    return ResNet(blocks, [3,4,23,3], in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+
+def main152(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
+    return ResNet(blocks, [3,8,36,3], in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+
+def main200(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
+    return ResNet(blocks, [3,24,36,3], in_channels=in_channels, num_classes=n_classes, dropout=dropout)
 
 
-def resnet_agent(num_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock):
-    return Agent(blocks, [1,1,1,1], in_channels=in_channels, num_classes=num_classes, dropout=dropout)
+def spottune18(n_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock):
+    return SpotTune(main='main18', in_channels=in_channels, num_classes=n_classes, dropout=dropout)
 
+def spottune34(n_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock):
+    return SpotTune(main='main34', in_channels=in_channels, num_classes=n_classes, dropout=dropout)
 
+def spottune50(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
+    return SpotTune(main='main50', in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+
+def spottune101(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
+    return SpotTune(main='main101', in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+
+def spottune152(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
+    return SpotTune(main='main152', in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+
+def spottune200(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
+    return SpotTune(main='main200', in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+
+weight_map = {
+    'main18': 'resnet_18.pth',
+    'main34': 'resnet_34.pth',
+    'main50': 'resnet_50.pth',
+    'main101': 'resnet_101.pth',
+    'main152': 'resnet_152.pth',
+    'main200': 'resnet_200.pth',
+}

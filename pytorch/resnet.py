@@ -87,9 +87,13 @@ class Bottleneck(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, block, layers, in_channels=3, num_classes=64, dropout=0.0, n_clinical=None):
+    def __init__(self, block, layers, in_channels=3, n_classes=64, dropout=0.0, n_clinical=None):
         super(ResNet, self).__init__()
         self.expansion = 4
+        if block == BasicBlock:
+            self.expansion = 1
+        if block == Bottleneck:
+            self.expansion = 4
         self.factor = 2
         self.conv1 = nn.Conv3d(in_channels, 64, kernel_size=(7,7,7), stride=2, padding=3, bias=False)
         self.bn1 = nn.BatchNorm3d(64)
@@ -117,14 +121,14 @@ class ResNet(nn.Module):
 
         #if self.n_clinical is not None:
         #    #self.classify = nn.Linear(self.channels[-1]*self.expansion + n_clinical, 512)
-        #    self.classify = nn.Linear(self.channels[-1]*self.expansion + n_clinical, num_classes)
+        #    self.classify = nn.Linear(self.channels[-1]*self.expansion + n_clinical, n_classes)
         #else:
-        #    self.classify = nn.Linear(self.channels[-1]*self.expansion, num_classes)
-        self.classify = nn.LazyLinear(num_classes)
-
+        #    self.classify = nn.Linear(self.channels[-1]*self.expansion, n_classes)
+        #self.classify = nn.Linear(self.channels[-1]*self.expansion +18,n_classes)
+        self.classify = nn.Linear(self.channels[-1]*self.expansion,n_classes)
         #self.classify1 = nn.Linear(512, 512)
         #self.classify2 = nn.Linear(512, 512)
-        #self.classify3 = nn.Linear(512, num_classes)
+        #self.classify3 = nn.Linear(512, n_classes)
 
         self.dropout = nn.Dropout(dropout)
 
@@ -168,12 +172,13 @@ class ResNet(nn.Module):
 
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
-        if clinical is not None:
-            x = torch.cat((x, clinical), 1)
-            x = self.classify(x)
-            x = x.squeeze()
-        else:
-            x = self.classify(x)
+        #if clinical is not None:
+        #    x = torch.cat((x, clinical), 1)
+        #    x = self.classify(x)
+        #    x = x.squeeze()
+        #else:
+        #    x = self.classify(x)
+        x = self.classify(x)
 
         #x = self.classify1(x)
         #x = self.classify2(x)
@@ -182,20 +187,20 @@ class ResNet(nn.Module):
         return x
 
 
-def resnet18(num_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock, n_clinical=None):
-    return ResNet(blocks, [2,2,2,2], in_channels=in_channels, num_classes=num_classes, dropout=dropout, n_clinical=n_clinical)
+def resnet18(n_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock, n_clinical=None):
+    return ResNet(blocks, [2,2,2,2], in_channels=in_channels, n_classes=n_classes, dropout=dropout, n_clinical=n_clinical)
 
 
-def resnet34(num_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock, n_clinical=None):
-    return ResNet(blocks, [3,4,6,3], in_channels=in_channels, num_classes=num_classes, dropout=dropout, n_clinical=n_clinical)
+def resnet34(n_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock, n_clinical=None):
+    return ResNet(blocks, [3,4,6,3], in_channels=in_channels, n_classes=n_classes, dropout=dropout, n_clinical=n_clinical)
 
-def resnet50(num_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck, n_clinical=None):
-    return ResNet(blocks, [3,4,6,3], in_channels=in_channels, num_classes=num_classes, dropout=dropout, n_clinical=n_clinical)
+def resnet50(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck, n_clinical=None):
+    return ResNet(blocks, [3,4,6,3], in_channels=in_channels, n_classes=n_classes, dropout=dropout, n_clinical=n_clinical)
 
-def resnet101(num_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck, n_clinical=None):
-    return ResNet(blocks, [3,4,23,3], in_channels=in_channels, num_classes=num_classes, dropout=dropout, n_clinical=n_clinical)
+def resnet101(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck, n_clinical=None):
+    return ResNet(blocks, [3,4,23,3], in_channels=in_channels, n_classes=n_classes, dropout=dropout, n_clinical=n_clinical)
 
-def resnet152(num_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck, n_clinical=None):
-    return ResNet(blocks, [3,8,36,3], in_channels=in_channels, num_classes=num_classes, dropout=dropout, n_clinical=n_clinical)
-def resnet200(num_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck, n_clinical=None):
-    return ResNet(blocks, [3,24,36,3], in_channels=in_channels, num_classes=num_classes, dropout=dropout, n_clinical=n_clinical)
+def resnet152(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck, n_clinical=None):
+    return ResNet(blocks, [3,8,36,3], in_channels=in_channels, n_classes=n_classes, dropout=dropout, n_clinical=n_clinical)
+def resnet200(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck, n_clinical=None):
+    return ResNet(blocks, [3,24,36,3], in_channels=in_channels, n_classes=n_classes, dropout=dropout, n_clinical=n_clinical)
