@@ -59,6 +59,8 @@ class CNN_GNN(L.LightningModule):
             self.classify = Classify(in_channels=768+self.config['n_clinical'], n_classes=self.config['n_classes'])
 
         else:
+            if self.config['multi_label'] and self.config['n_classes'] != 4:
+                raise Exception('number of classes too small for multi-label')
             self.classify = Classify(in_channels=in_channels, n_classes=self.config['n_classes'])
 
         self.loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([self.config['class_weight']]))
@@ -66,20 +68,36 @@ class CNN_GNN(L.LightningModule):
         #self.test_loss_fn = nn.BCEWithLogitsLoss()
 
         self.m_fn = um.MMetric(0.6, 0.4)
-        self.auc_fn = torchmetrics.classification.BinaryAUROC()
-        self.ap_fn = torchmetrics.classification.BinaryAveragePrecision()
-        self.spe_fn = torchmetrics.classification.BinarySpecificity()
-        self.sen_fn = torchmetrics.classification.BinaryRecall()
+        if self.config['multi_label']:
+            self.auc_fn = torchmetrics.classification.MultiLabelAUROC(num_labels=self.config['n_classes'], average='none')
+            self.ap_fn = torchmetrics.classification.MultiLabelAveragePrecision(num_labels=self.config['n_classes'], average='none')
+            self.spe_fn = torchmetrics.classification.MultiLabelSpecificity(num_labels=self.config['n_classes'], average='none')
+            self.sen_fn = torchmetrics.classification.MultiLabelRecall(num_labels=self.config['n_classes'], average='none')
 
-        self.val_auc_fn = torchmetrics.classification.BinaryAUROC()
-        self.val_ap_fn = torchmetrics.classification.BinaryAveragePrecision()
-        self.val_spe_fn = torchmetrics.classification.BinarySpecificity()
-        self.val_sen_fn = torchmetrics.classification.BinaryRecall()
+            self.val_auc_fn = torchmetrics.classification.MultiLabelAUROC(num_labels=self.config['n_classes'], average='none')
+            self.val_ap_fn = torchmetrics.classification.MultiLabelAveragePrecision(num_labels=self.config['n_classes'], average='none')
+            self.val_spe_fn = torchmetrics.classification.MultiLabelSpecificity(num_labels=self.config['n_classes'], average='none')
+            self.val_sen_fn = torchmetrics.classification.MultiLabelRecall(num_labels=self.config['n_classes'], average='none')
 
-        self.test_auc_fn = torchmetrics.classification.BinaryAUROC()
-        self.test_ap_fn = torchmetrics.classification.BinaryAveragePrecision()
-        self.test_spe_fn = torchmetrics.classification.BinarySpecificity()
-        self.test_sen_fn = torchmetrics.classification.BinaryRecall()
+            self.test_auc_fn = torchmetrics.classification.MultiLabelAUROC(num_labels=self.config['n_classes'], average='none')
+            self.test_ap_fn = torchmetrics.classification.MultiLabelAveragePrecision(num_labels=self.config['n_classes'], average='none')
+            self.test_spe_fn = torchmetrics.classification.MultiLabelSpecificity(num_labels=self.config['n_classes'], average='none')
+            self.test_sen_fn = torchmetrics.classification.MultiLabelRecall(num_labels=self.config['n_classes'], average='none')
+        else:
+            self.auc_fn = torchmetrics.classification.BinaryAUROC()
+            self.ap_fn = torchmetrics.classification.BinaryAveragePrecision()
+            self.spe_fn = torchmetrics.classification.BinarySpecificity()
+            self.sen_fn = torchmetrics.classification.BinaryRecall()
+
+            self.val_auc_fn = torchmetrics.classification.BinaryAUROC()
+            self.val_ap_fn = torchmetrics.classification.BinaryAveragePrecision()
+            self.val_spe_fn = torchmetrics.classification.BinarySpecificity()
+            self.val_sen_fn = torchmetrics.classification.BinaryRecall()
+
+            self.test_auc_fn = torchmetrics.classification.BinaryAUROC()
+            self.test_ap_fn = torchmetrics.classification.BinaryAveragePrecision()
+            self.test_spe_fn = torchmetrics.classification.BinarySpecificity()
+            self.test_sen_fn = torchmetrics.classification.BinaryRecall()
 
         self.save_hyperparameters()
 
@@ -110,7 +128,7 @@ class CNN_GNN(L.LightningModule):
             nn.init.constant_(m.bias, 0.)
         elif isinstance(m, nn.Linear):
             nn.init.kaiming_normal_(m.weight)
-            nn.init.constant_(m.bias, -1.5214691)
+            nn.init.constant_(m.bias, 0.)
 
 
     def _shared_eval_step(self, batch, batch_idx):
@@ -133,7 +151,9 @@ class CNN_GNN(L.LightningModule):
         x = self.gnn(x=x, edge_index=edge_index, batch=batch.batch, edge_attr=edge_attr)  
 
         if self.config['use_clinical']:
-            x = self.classify(x, batch.clinical)
+            clinical = batch.clinical
+            clinical[:, 0:4] = (batch.clinical[:, 0:4] - self.clinical_mean) / self.clinical_std
+            x = self.classify(x, clinical)
         else:
             x = self.classify(x)
 
@@ -165,7 +185,14 @@ class CNN_GNN(L.LightningModule):
         
             #pred = self(batch, batch_idx) 
 
-        loss = self.loss_fn(pred, batch.y.to(torch.float))
+        if self.config['multi_label']:
+            dm_loss = self.loss_fn(pred, batch.y.to(torch.float))
+            lm_loss = self.loss_fn(pred, batch.lm.to(torch.float))
+            rm_loss = self.loss_fn(pred, batch.rm.to(torch.float))
+            death_loss = self.loss_fn(pred, batch.death.to(torch.float))
+            loss = dm_loss + lm_loss + rm_loss + death_loss
+        else:
+            loss = self.loss_fn(pred, batch.y.to(torch.float))
 
         self.auc_fn(pred, batch.y) 
         self.ap_fn(pred, batch.y.to(torch.int64)) 
@@ -179,13 +206,20 @@ class CNN_GNN(L.LightningModule):
         self.log("train_sen", self.sen_fn, on_step=False, on_epoch=True, batch_size=len(batch.batch))
         self.log("train_spe", self.spe_fn, on_step=False, on_epoch=True, batch_size=len(batch.batch))
 
-        return loss
+        return {'loss': loss, 'dm_loss': dm_loss, 'lm_loss': lm_loss, 'rm_loss': rm_loss, 'death_loss': death_loss} if self.config['multi_label'] else loss
 
 
     def validation_step(self, batch, batch_idx):
         pred = self._shared_eval_step(batch, batch_idx)
 
-        val_loss = self.loss_fn(pred, batch.y.to(torch.float))
+        if self.config['multi_label']:
+            dm_val_loss = self.loss_fn(pred, batch.y.to(torch.float))
+            lm_val_loss = self.loss_fn(pred, batch.lm.to(torch.float))
+            rm_val_loss = self.loss_fn(pred, batch.rm.to(torch.float))
+            death_val_loss = self.loss_fn(pred, batch.death.to(torch.float))
+            val_loss = dm_val_loss + lm_val_loss + rm_val_loss + death_val_loss
+        else:
+            val_loss = self.loss_fn(pred, batch.y.to(torch.float))
 
         self.val_auc_fn(pred, batch.y) 
         self.val_ap_fn(pred, batch.y.to(torch.int64)) 
@@ -200,13 +234,20 @@ class CNN_GNN(L.LightningModule):
         "val_spe": self.val_spe_fn,
         }, batch_size=len(batch.batch), prog_bar=True)
 
-        return {"val_loss": val_loss}
+        return {"val_loss": val_loss, 'dm_val_loss': dm_val_loss, 'lm_val_loss': lm_val_loss, 'rm_val_loss': rm_val_loss, 'death_val_loss': death_val_loss} if self.config['multi_label'] else {"val_loss": val_loss}
 
 
     def test_step(self, batch, batch_idx):
         pred = self._shared_eval_step(batch, batch_idx)
 
-        test_loss = self.loss_fn(pred, batch.y.to(torch.float))
+        if self.config['multi_label']:
+            dm_test_loss = self.loss_fn(pred, batch.y.to(torch.float))
+            lm_test_loss = self.loss_fn(pred, batch.lm.to(torch.float))
+            rm_test_loss = self.loss_fn(pred, batch.rm.to(torch.float))
+            death_test_loss = self.loss_fn(pred, batch.death.to(torch.float))
+            test_loss = dm_test_loss + lm_test_loss + rm_test_loss + death_test_loss
+        else:
+            test_loss = self.loss_fn(pred, batch.y.to(torch.float))
 
         self.test_auc_fn(pred, batch.y) 
         self.test_ap_fn(pred, batch.y.to(torch.int64)) 

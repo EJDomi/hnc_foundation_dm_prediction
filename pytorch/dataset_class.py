@@ -100,18 +100,25 @@ class DatasetGeneratorImage(Dataset):
             if self.config['challenge'] == True:
                 self.y_challenge = self.y_source[(self.y_source['RADCURE-challenge'] == 'training') | (self.y_source['RADCURE-challenge'] == 'test')]
                 if self.config['remove_censored']:
-                    self.y_challenge = self.y_challenge[(self.y_challenge['last_fu_days'] >= datetime.timedelta(days = 2*365)) | (self.y_challenge['survival_dm_yrs'] > 0)]
+                    self.y_challenge = self.y_challenge[(self.y_challenge['last_fu_yrs'] >= self.years) | (self.y_challenge['survival_dm_yrs'] > 0)]
                 self.patients = list(self.y_challenge.index)
                 self.y = self.y_challenge['survival_dm_yrs'].notna() & (self.y_challenge['survival_dm_yrs'] < self.years) & (self.y_challenge['survival_dm_yrs'] > 0)
-
+                self.lm = self.y_challenge['survival_lm_yrs'].notna() & (self.y_challenge['survival_lm_yrs'] < self.years) & (self.y_challenge['survival_lm_yrs'] > 0)
+                self.rm = self.y_challenge['survival_rm_yrs'].notna() & (self.y_challenge['survival_rm_yrs'] < self.years) & (self.y_challenge['survival_rm_yrs'] > 0)
+                self.death = self.y_challenge['survival_death_yrs'].notna() & (self.y_challenge['survival_death_yrs'] < self.years) & (self.y_challenge['survival_death_yrs'] > 0) & (self.y_challenge['Cause of Death'].str.contains('Index'))
+                self.any_rec = self.y | self.lm | self.rm | self.death
             else:
                 if self.config['remove_censored']:
-                    self.y_nocensor = self.y_source[(self.y_source['last_fu_days'] >= datetime.timedelta(days = 2*365)) | (self.y_source['survival_dm_yrs'] > 0)]
+                    self.y_nocensor = self.y_source[(self.y_source['last_fu_yrs'] >= 2) | (self.y_source['survival_dm_yrs'] > 0)]
                     self.patients = list(self.y_nocensor.index)
                     self.y = self.y_nocensor['survival_dm_yrs'].notna() & (self.y_nocensor['survival_dm_yrs'] < self.years) & (self.y_nocensor['survival_dm_yrs'] > 0)
                 else:
                     self.patients = list(self.y_source.index)
                     self.y = self.y_source['survival_dm_yrs'].notna() & (self.y_source['survival_dm_yrs'] < self.years) & (self.y_source['survival_dm_yrs'] > 0)
+                    self.lm = self.y_source['survival_lm_yrs'].notna() & (self.y_source['survival_lm_yrs'] < self.years) & (self.y_source['survival_lm_yrs'] > 0)
+                    self.rm = self.y_source['survival_rm_yrs'].notna() & (self.y_source['survival_rm_yrs'] < self.years) & (self.y_source['survival_rm_yrs'] > 0)
+                    self.death = self.y_source['survival_death_yrs'].notna() & (self.y_source['survival_death_yrs'] < self.years) & (self.y_source['survival_death_yrs'] > 0) & (self.y_source['Cause of Death'].str.contains('Index'))
+                    self.any_rec = self.y | self.lm | self.rm | self.death
             
            
 
@@ -138,27 +145,6 @@ class DatasetGeneratorImage(Dataset):
                         self.patients.extend(aug_rot_pats.index)
                         self.y = pd.concat([self.y, aug_rot_pats])
                     
-                #aug_rot_pats = aug_pats.copy(deep=True)
-                #aug_rot_pats.index = aug_pats.index + f"_rotation_0"
-                #self.patients.extend(aug_rot_pats.index)
-                
-                #self.y = pd.concat([self.y, aug_rot_pats])
-                
-
-            if 'noise' in self.config['augments']:
-                aug_noise_pats = aug_pats.copy(deep=True)
-                aug_noise_pats.index = aug_pats.index + f"_noise"
-                self.patients.extend(aug_noise_pats.index)
-                self.y = pd.concat([self.y, aug_noise_pats])
-
-            if 'flip' in self.config['augments']:
-                aug_flip_pats = aug_pats.copy(deep=True)
-                aug_flip_pats.index = aug_pats.index + f"_flip"
-                self.patients.extend(aug_flip_pats.index)
-                self.y = pd.concat([self.y, aug_flip_pats])
-          
-             
-
 
         super(DatasetGeneratorImage, self).__init__(pre_transform=pre_transform)
 
@@ -298,9 +284,9 @@ class DatasetGeneratorImage(Dataset):
             #if len(self.edge_dict[pat]) == 0:
             if len(patch_list) == 1:
                 if self.config['with_edge_attr']:
-                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), edge_attr=torch.tensor([[0.]]), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=full_pat)
+                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), edge_attr=torch.tensor([[0.]]), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=full_pat, lm=torch.tensor([int(self.lm[pat])], dtype=troch.float), rm=torch.tensor([int(self.rm[pat])], dtype=troch.float), death=torch.tensor([int(self.death[pat])], dtype=troch.float), any_rec=torch.tensor([int(self.any_rec[pat])], dtype=troch.float)
                 else:
-                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=full_pat)
+                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=full_pat, lm=torch.tensor([int(self.lm[pat])], dtype=troch.float), rm=torch.tensor([int(self.rm[pat])], dtype=troch.float), death=torch.tensor([int(self.death[pat])], dtype=troch.float), any_rec=torch.tensor([int(self.any_rec[pat])], dtype=troch.float))
             else:
                 if self.config['reverse_edges']:
                     edges = torch.tensor([[edge_idx_map[gtv2], edge_idx_map[gtv]] for gtv, gtv2 in self.edge_dict[pat] if gtv in patch_list and gtv2 in patch_list], dtype=torch.int64)
@@ -316,7 +302,7 @@ class DatasetGeneratorImage(Dataset):
                 #full_edges_ten = torch.tensor(full_edges, dtype=torch.int64)
                 #edges_op = torch.tensor([[edge_idx_map[gtv2], edge_idx_map[gtv]] for gtv, gtv2 in self.edge_dict[pat]], dtype=torch.int64)
                 #edges = torch.cat((edges, edges_op), 0)
-                data = Data(x=graph_array, edge_index=edges.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=full_pat)
+                data = Data(x=graph_array, edge_index=edges.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=full_pat, lm=torch.tensor([int(self.lm[pat])], dtype=troch.float), rm=torch.tensor([int(self.rm[pat])], dtype=troch.float), death=torch.tensor([int(self.death[pat])], dtype=troch.float), any_rec=torch.tensor([int(self.any_rec[pat])], dtype=troch.float))
                 #data = Data(x=graph_array, edge_index=full_edges_ten.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=pat)
 
 

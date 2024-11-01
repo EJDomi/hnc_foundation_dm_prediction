@@ -85,17 +85,22 @@ def retrieve_patients(csv_dir, dataset='HNSCC'):
         lm_recurrence_date = pd.to_datetime(clinical_info['Date Local'], format='%m/%d/%Y')
         rm_recurrence_date = pd.to_datetime(clinical_info['Date Regional'], format='%m/%d/%Y')
         last_fu_date = pd.to_datetime(clinical_info['Last FU'], format='%m/%d/%Y')
+        death_date = pd.to_datetime(clinical_info['Date of Death'], format='%m/%d/%Y')
 
 
-        time_to_recurrence_years = (dm_recurrence_date - treatment_start) / pd.Timedelta("365 days")
+        time_to_recurrence_years = ((dm_recurrence_date - treatment_start) / pd.Timedelta("365 days")).rename('survival_dm_yrs')
+        time_to_local_years = ((lm_recurrence_date - treatment_start) / pd.Timedelta("365 days")).rename('survival_lm_yrs')
+        time_to_regional_years = ((rm_recurrence_date - treatment_start) / pd.Timedelta("365 days")).rename('survival_rm_yrs')
+        time_to_death_years = ((death_date - treatment_start) / pd.Timedelta("365 days")).rename('survival_death_yrs')
+        time_to_lastfu_years = ((last_fu_date - treatment_start) / pd.Timedelta("365 days")).rename('last_fu_yrs')
 
         time_to_distant_days = (dm_recurrence_date - treatment_start).rename('survival_dm_days')
         time_to_local_days = (lm_recurrence_date - treatment_start).rename('survival_lm_days')
         time_to_regional_days = (rm_recurrence_date - treatment_start).rename('survival_rm_days')
-        time_to_lastfu = (last_fu_date - treatment_start).rename('last_fu_days')
-        patients = time_to_recurrence_years.rename('survival_dm_yrs')
+        time_to_lastfu_days = (last_fu_date - treatment_start).rename('last_fu_days')
+        patients = time_to_recurrence_years
         
-        patients = pd.concat([patients, clinical_info['RADCURE-challenge'], time_to_local_days, time_to_regional_days, time_to_distant_days, time_to_lastfu], axis=1)
+        patients = pd.concat([patients, clinical_info['RADCURE-challenge'], time_to_local_years, time_to_regional_years, time_to_death_years, time_to_lastfu_years, clinical_info['Cause of Death']], axis=1)
 
     return patients
 
