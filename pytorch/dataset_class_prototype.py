@@ -69,16 +69,16 @@ class DatasetGeneratorImage(Dataset):
         self.patients = list(self.y_processing.index)
 
         #self.y = self.y_processing['survival_dm_yrs'].notna() & (self.y_processing['survival_dm_yrs'] < self.years) & (self.y_processing['survival_dm_yrs'] > 0)
-        self.dm = self.y_processing['survival_dm_yrs'].notna() & (self.y_processing['survival_dm_yrs'] < self.years) & self.y_processing['survival_dm_yrs'] > 0).rename('dm_2year')
-        self.lm = self.y_processing['survival_lm_yrs'].notna() & (self.y_processing['survival_lm_yrs'] < self.years) & (self.y_processing['survival_lm_yrs'] > 0).rename('lm_2year')
-        self.rm = self.y_processing['survival_rm_yrs'].notna() & (self.y_processing['survival_rm_yrs'] < self.years) & (self.y_processing['survival_rm_yrs'] > 0).rename('rm_2year')
-        self.death = self.y_processing['survival_death_yrs'].notna() & (self.y_processing['survival_death_yrs'] < self.years) & (self.y_processing['survival_death_yrs'] > 0) & (self.y_processing['Cause of Death'].str.contains('Index')).rename('death_2year')
+        self.dm = (self.y_processing['survival_dm_yrs'].notna() & (self.y_processing['survival_dm_yrs'] < self.years) & (self.y_processing['survival_dm_yrs'] > 0)).rename('dm_2year')
+        self.lm = (self.y_processing['survival_lm_yrs'].notna() & (self.y_processing['survival_lm_yrs'] < self.years) & (self.y_processing['survival_lm_yrs'] > 0)).rename('lm_2year')
+        self.rm = (self.y_processing['survival_rm_yrs'].notna() & (self.y_processing['survival_rm_yrs'] < self.years) & (self.y_processing['survival_rm_yrs'] > 0)).rename('rm_2year')
+        self.death = (self.y_processing['survival_death_yrs'].notna() & (self.y_processing['survival_death_yrs'] < self.years) & (self.y_processing['survival_death_yrs'] > 0) & (self.y_processing['Cause of Death'].str.contains('Index'))).rename('death_2year')
         self.any_rec = (self.dm | self.lm | self.rm | self.death).rename('os_2year')
 
         self.y = pd.concat([self.dm, self.lm, self.rm, self.death, self.any_rec], axis=1)
 
         if self.config['augment']:
-            aug_pos_pats = self.y[(self.y==1)
+            aug_pos_pats = self.y[(self.y['dm_2year']==1)]
             aug_pats = self.y
                
             if 'rotation' in self.config['augments']:
