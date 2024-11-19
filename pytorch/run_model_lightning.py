@@ -118,7 +118,7 @@ class RunModel(object):
 
 
     def set_data_module(self):
-        self.data_module_cross_val = [LightningDataset(train_dataset=self.data[fold], val_dataset=self.data[self.val_splits[idx]], test_dataset=self.data[self.test_splits], batch_size=self.config['batch_size'], num_workers=19, pin_memory=True, persistent_workers=False, shuffle=True, drop_last=False) for idx, fold in enumerate(self.train_splits)] 
+        self.data_module_cross_val = [LightningDataset(train_dataset=self.data[fold], val_dataset=self.data[self.val_splits[idx]], test_dataset=self.data[self.test_splits], batch_size=self.config['batch_size'], num_workers=16, pin_memory=True, persistent_workers=False, shuffle=True, drop_last=False) for idx, fold in enumerate(self.train_splits)] 
 
 
 
@@ -265,8 +265,6 @@ class RunModel(object):
 
         self.test_predictions_dict = {callback.monitor: [] for callback in self.trainers[0].callbacks if 'ModelCheckpoint' in callback.__class__.__name__}
         self.val_predictions_dict = {callback.monitor: [] for callback in self.trainers[0].callbacks if 'ModelCheckpoint' in callback.__class__.__name__}
-        self.test_k_predictions_dict = {callback.monitor: {f"model_{idx}": [] for idx in range(self.config['save_top_k'])} for callback in self.trainers[0].callbacks if 'ModelCheckpoint' in callback.__class__.__name__}
-        self.val_k_predictions_dict = {callback.monitor: {f"model_{idx}": [] for idx in range(self.config['save_top_k'])} for callback in self.trainers[0].callbacks if 'ModelCheckpoint' in callback.__class__.__name__}
         self.test_targets = []
         self.val_targets = []
 
@@ -278,11 +276,6 @@ class RunModel(object):
                 self.test_predictions_dict[monitor].append(torch.cat(trainer.predict(trainer.model, self.data_module_cross_val[idx].test_dataloader(), ckpt_path=best_model)))
                 self.val_predictions_dict[monitor].append(torch.cat(trainer.predict(trainer.model, self.data_module_cross_val[idx].val_dataloader(), ckpt_path=best_model)))
 
-            for monitor, best_model_list in self.best_k_checkpoints[f"fold_{idx}"].items():
-                for mod_idx, best_model in enumerate(best_model_list):
-                    self.val_k_predictions_dict[monitor][f"model_{mod_idx}"].append(torch.cat(trainer.predict(trainer.model, self.data_module_cross_val[idx].test_dataloader(), ckpt_path=best_model)))
-                    self.test_k_predictions_dict[monitor][f"model_{mod_idx}"].append(torch.cat(trainer.predict(trainer.model, self.data_module_cross_val[idx].val_dataloader(), ckpt_path=best_model)))
-                    
             for batch in self.data_module_cross_val[idx].test_dataloader():
                 tmp_test_targets.append(batch.y)
             for batch in self.data_module_cross_val[idx].val_dataloader():

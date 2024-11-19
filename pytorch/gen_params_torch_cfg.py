@@ -25,6 +25,7 @@ model_config = {
                 "edge_dim": 1,
                 "reverse_edges": False,
                 "complete_graph": False,
+                "undirected_graph": False,
                 # v1 has 29, v2 has 32
                 "n_clinical": 32,
                 "use_clinical": False, 
@@ -58,6 +59,7 @@ model_config = {
                "num_deep_layers": 28,
                "positive_increase": 5,
                "balance_classes": False,
+               "true_balance_classes": False,
                "class_weights": 20.,
                 "max_nodes": { 'HNSCC': 15,
                              },

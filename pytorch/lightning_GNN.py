@@ -22,8 +22,8 @@ class Classify(nn.Module):
     def forward(self, x, clinical=None):
         if x.dim() > 2:
             x = torch.flatten(x, start_dim=1)
-        
         if clinical is not None:
+            #clinical = torch.unique(clinical, dim=0)
             x = torch.cat((x, clinical), 1)
             x = self.classify(x) 
         else:
@@ -98,7 +98,8 @@ class CNN_GNN(L.LightningModule):
             self.test_ap_fn = torchmetrics.classification.BinaryAveragePrecision()
             self.test_spe_fn = torchmetrics.classification.BinarySpecificity()
             self.test_sen_fn = torchmetrics.classification.BinaryRecall()
-
+        self.test_preds = []
+        self.test_targets = []
         self.save_hyperparameters()
 
     def init_params(self, m):
@@ -132,30 +133,31 @@ class CNN_GNN(L.LightningModule):
 
 
     def _shared_eval_step(self, batch, batch_idx):
-        x = batch.x
-        edge_index = batch.edge_index
+        with torch.no_grad():
+            x = batch.x
+            edge_index = batch.edge_index
 
-        if batch.edge_attr is not None:
-            edge_attr = batch.edge_attr.float()
-        else:
-            edge_attr = None
+            if batch.edge_attr is not None:
+                edge_attr = batch.edge_attr.float()
+            else:
+                edge_attr = None
 
-        if 'swin' in self.config['extractor_name']:
-            x = self.extractor(x)[-1]
-            x = self.avg_pool(x)
-        else:
-            x = self.extractor(x)
+            if 'swin' in self.config['extractor_name']:
+                x = self.extractor(x)[-1]
+                x = self.avg_pool(x)
+            else:
+                x = self.extractor(x)
  
-        if x.dim() == 1:
-            x = x.squeeze().unsqueeze(0)
-        x = self.gnn(x=x, edge_index=edge_index, batch=batch.batch, edge_attr=edge_attr)  
+            if x.dim() == 1:
+                x = x.squeeze().unsqueeze(0)
+            x = self.gnn(x=x, edge_index=edge_index, batch=batch.batch, edge_attr=edge_attr)  
 
-        if self.config['use_clinical']:
-            clinical = batch.clinical
-            clinical[:, 0:4] = (batch.clinical[:, 0:4] - self.clinical_mean) / self.clinical_std
-            x = self.classify(x, clinical)
-        else:
-            x = self.classify(x)
+            if self.config['use_clinical']:
+                clinical = batch.clinical
+                clinical[:, 0:4] = (batch.clinical[:, 0:4] - self.clinical_mean) / self.clinical_std
+                x = self.classify(x, clinical)
+            else:
+                x = self.classify(x)
 
         return x
         
@@ -211,7 +213,6 @@ class CNN_GNN(L.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         pred = self._shared_eval_step(batch, batch_idx)
-
         if self.config['multi_label']:
             dm_val_loss = self.loss_fn(pred, batch.y.to(torch.float))
             lm_val_loss = self.loss_fn(pred, batch.lm.to(torch.float))
@@ -239,6 +240,8 @@ class CNN_GNN(L.LightningModule):
 
     def test_step(self, batch, batch_idx):
         pred = self._shared_eval_step(batch, batch_idx)
+        self.test_preds.append(pred)
+        self.test_targets.append(batch.y)
 
         if self.config['multi_label']:
             dm_test_loss = self.loss_fn(pred, batch.y.to(torch.float))
@@ -262,9 +265,9 @@ class CNN_GNN(L.LightningModule):
 
     def predict_step(self, batch, batch_idx):
         x = self._shared_eval_step(batch, batch_idx)
-        turn = nn.Sigmoid()
-        pred = turn(x)
-        return pred
+        #turn = nn.Sigmoid()
+        #pred = turn(x)
+        return x
 
 
     def configure_optimizers(self):

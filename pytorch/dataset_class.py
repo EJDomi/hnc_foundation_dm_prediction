@@ -144,6 +144,13 @@ class DatasetGeneratorImage(Dataset):
                         aug_rot_pats.index = aug_pos_pats.index + f"_rotation_pos_{rot+1}"
                         self.patients.extend(aug_rot_pats.index)
                         self.y = pd.concat([self.y, aug_rot_pats])
+                if self.config['true_balance_classes']:
+                    ratio_classes = int(floor(len(self.y[self.y==0]) / len(self.y[self.y==1])))
+                    for rot in range(ratio_classes-1):
+                        aug_rot_pats = aug_pos_pats.copy(deep=True)
+                        aug_rot_pats.index = aug_pos_pats.index + f"_rotation_pos_{rot+1}"
+                        self.patients.extend(aug_rot_pats.index)
+                        self.y = pd.concat([self.y, aug_rot_pats])
                     
 
         super(DatasetGeneratorImage, self).__init__(pre_transform=pre_transform)
@@ -284,14 +291,18 @@ class DatasetGeneratorImage(Dataset):
             #if len(self.edge_dict[pat]) == 0:
             if len(patch_list) == 1:
                 if self.config['with_edge_attr']:
-                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), edge_attr=torch.tensor([[0.]]), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=full_pat, lm=torch.tensor([int(self.lm[pat])], dtype=troch.float), rm=torch.tensor([int(self.rm[pat])], dtype=troch.float), death=torch.tensor([int(self.death[pat])], dtype=troch.float), any_rec=torch.tensor([int(self.any_rec[pat])], dtype=troch.float)
+                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), edge_attr=torch.tensor([[0.]]), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=full_pat, lm=torch.tensor([int(self.lm[pat])], dtype=torch.float), rm=torch.tensor([int(self.rm[pat])], dtype=torch.float), death=torch.tensor([int(self.death[pat])], dtype=torch.float), any_rec=torch.tensor([int(self.any_rec[pat])], dtype=torch.float))
                 else:
-                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=full_pat, lm=torch.tensor([int(self.lm[pat])], dtype=troch.float), rm=torch.tensor([int(self.rm[pat])], dtype=troch.float), death=torch.tensor([int(self.death[pat])], dtype=troch.float), any_rec=torch.tensor([int(self.any_rec[pat])], dtype=troch.float))
+                    data = Data(x=graph_array, edge_index=torch.tensor([[0,0]], dtype=torch.int64).t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=full_pat, lm=torch.tensor([int(self.lm[pat])], dtype=torch.float), rm=torch.tensor([int(self.rm[pat])], dtype=torch.float), death=torch.tensor([int(self.death[pat])], dtype=torch.float), any_rec=torch.tensor([int(self.any_rec[pat])], dtype=torch.float))
             else:
                 if self.config['reverse_edges']:
                     edges = torch.tensor([[edge_idx_map[gtv2], edge_idx_map[gtv]] for gtv, gtv2 in self.edge_dict[pat] if gtv in patch_list and gtv2 in patch_list], dtype=torch.int64)
                 elif self.config['complete_graph']:
-                    edges = torch.tensor([[edge_idx_map[gtv], edge_idx_map[gtv2]] for gtv in patch_list for gtv2 in patch_list], dtype=torch.int64)
+                    edges = torch.tensor([[edge_idx_map[gtv], edge_idx_map[gtv2]] for gtv in patch_list for gtv2 in patch_list if gtv != gtv2], dtype=torch.int64)
+                elif self.config['undirected_graph']:
+                    edges = torch.tensor([[edge_idx_map[gtv], edge_idx_map[gtv2]] for gtv, gtv2 in self.edge_dict[pat] if gtv in patch_list and gtv2 in patch_list], dtype=torch.int64)
+                    edges2 = torch.tensor([[edge_idx_map[gtv2], edge_idx_map[gtv]] for gtv, gtv2 in self.edge_dict[pat] if gtv in patch_list and gtv2 in patch_list], dtype=torch.int64)
+                    edges = torch.cat((edges, edges2), 0)
                 else:
                     edges = torch.tensor([[edge_idx_map[gtv], edge_idx_map[gtv2]] for gtv, gtv2 in self.edge_dict[pat] if gtv in patch_list and gtv2 in patch_list], dtype=torch.int64)
                 #full_edges = []
@@ -302,18 +313,19 @@ class DatasetGeneratorImage(Dataset):
                 #full_edges_ten = torch.tensor(full_edges, dtype=torch.int64)
                 #edges_op = torch.tensor([[edge_idx_map[gtv2], edge_idx_map[gtv]] for gtv, gtv2 in self.edge_dict[pat]], dtype=torch.int64)
                 #edges = torch.cat((edges, edges_op), 0)
-                data = Data(x=graph_array, edge_index=edges.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=full_pat, lm=torch.tensor([int(self.lm[pat])], dtype=troch.float), rm=torch.tensor([int(self.rm[pat])], dtype=troch.float), death=torch.tensor([int(self.death[pat])], dtype=troch.float), any_rec=torch.tensor([int(self.any_rec[pat])], dtype=troch.float))
+                data = Data(x=graph_array, edge_index=edges.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=full_pat, lm=torch.tensor([int(self.lm[pat])], dtype=torch.float), rm=torch.tensor([int(self.rm[pat])], dtype=torch.float), death=torch.tensor([int(self.death[pat])], dtype=torch.float), any_rec=torch.tensor([int(self.any_rec[pat])], dtype=torch.float))
                 #data = Data(x=graph_array, edge_index=full_edges_ten.t().contiguous(), pos=node_pos, y=torch.tensor([int(self.y[pat])], dtype=torch.float), clinical=clinical, patient=pat)
 
 
             if self.config['with_edge_attr'] and len(patch_list) != 1:
-                sph_transform = T.Spherical()
-                norm_transform = T.Cartesian()
-                dist_transform = T.Distance()
+                #sph_transform = T.Spherical()
+                #norm_transform = T.Cartesian()
+                #dist_transform = T.Distance()
                 #data = sph_transform(data) 
-                data = dist_transform(data) 
+                data = T.Distance()(data) 
                 #data = norm_transform(data) 
-            
+            #if self.config['undirected_graph']:
+            #    data = T.ToUndirected()(data)
 
             torch.save(data, f"{self.processed_dir}/graph_{idx}_{full_pat}.pt")
             #torch.save(data, f"{self.processed_dir}/graph_{idx}.pt")
