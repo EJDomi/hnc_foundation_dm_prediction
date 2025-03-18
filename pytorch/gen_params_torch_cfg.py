@@ -12,6 +12,8 @@ model_config = {
                 "clinical_data": 'clinical_features.pkl',
                 "data_path": '../../data/RADCURE',
                 "patch_dir": 'Nii_111_80_80_80_Crop',
+                "radiomics_dir": 'radiomics',
+                "use_radiomics": False,
                 "edge_file": 'edges_radcure_053024.pkl',
                 "locations_file": 'centered_locations_radcure_060424.pkl',
                 "remove_censored": False,
@@ -26,8 +28,11 @@ model_config = {
                 "reverse_edges": False,
                 "complete_graph": False,
                 "undirected_graph": False,
+                "star_graph": False,
                 # v1 has 29, v2 has 32
                 "n_clinical": 32,
+                "n_radiomics": 1316,
+                "n_embeddings": 1408,
                 "use_clinical": False, 
 	        "batch_size": 12,
 	        "n_epochs": 100,
@@ -61,6 +66,7 @@ model_config = {
                "balance_classes": False,
                "true_balance_classes": False,
                "class_weights": 20.,
+               "graph_pooling": False,
                 "max_nodes": { 'HNSCC': 15,
                              },
                 "clinical_means": {
@@ -77,7 +83,15 @@ model_config = {
                                              [11.9, 25.2, 5.86, 5.45],
                                              [11.9, 25.0, 5.94, 5.52]]
                                 },
-               "radiomics_mean": '../../data/HNSCC/radiomics_mean.pt',
-               "radiomics_std": '../../data/HNSCC/radiomics_std.pt',
+               "radiomics_mean": './radiomics_means.pkl',
+               "radiomics_std": './radiomics_stds.pkl',
+               "store_radiomics": True,
+               "store_embeddings": True,
+               "use_embeddings": False,
+               "embedding_file": 'radcure_ln_ct_embeddings_redo_v2.pkl',
+               "cut_on_ngtvs": False,
+               "regression": False,
+               "time_bins": 8,
+               "use_images": False
                }         
 

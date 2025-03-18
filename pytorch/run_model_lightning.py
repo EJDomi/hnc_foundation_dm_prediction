@@ -22,7 +22,7 @@ import torchmetrics
 import pytorch_lightning as L
 
 from hnc_project.pytorch.lightning_GNN import CNN_GNN 
-from hnc_project.pytorch.dataset_class import DatasetGeneratorImage
+from hnc_project.pytorch.dataset_class import DatasetGeneratorImage, PositiveSampler
 
 MODELS = ['SimpleGCN',
           'ResNetGCN',
@@ -64,9 +64,14 @@ class RunModel(object):
             train_pats = self.data.y.loc[self.data.y_challenge[self.data.y_challenge['RADCURE-challenge'] == 'training'].index]
             test_pats = self.data.y.loc[self.data.y_challenge[self.data.y_challenge['RADCURE-challenge'] == 'test'].index]
         else:
-            train_pats = self.data.y.loc[self.data.y_nocensor[self.data.y_nocensor['RADCURE-challenge'] != 'test'].index]
+            if self.config['remove_censored']:
+                train_pats = self.data.y.loc[self.data.y_nocensor[self.data.y_nocensor['RADCURE-challenge'] != 'test'].index]
             
-            test_pats = self.data.y.loc[self.data.y_nocensor[self.data.y_nocensor['RADCURE-challenge'] == 'test'].index]
+                test_pats = self.data.y.loc[self.data.y_nocensor[self.data.y_nocensor['RADCURE-challenge'] == 'test'].index]
+            else:
+                train_pats = self.data.y.loc[self.data.y_source[self.data.y_source['RADCURE-challenge'] != 'test'].index]
+                test_pats = self.data.y.loc[self.data.y_source[self.data.y_source['RADCURE-challenge'] == 'test'].index]
+            
        
         x = [self.data.y.index.get_loc(idx) for idx in train_pats.index]
         y = self.data.y.iloc[x] 
@@ -93,7 +98,10 @@ class RunModel(object):
             if self.config['challenge']:
                 fold_pats = self.data.y_challenge.iloc[fold].index
             else:
-                fold_pats = self.data.y_nocensor.iloc[fold].index
+                if self.config['remove_censored']:
+                    fold_pats = self.data.y_nocensor.iloc[fold].index
+                else:
+                    fold_pats = self.data.y_source.iloc[fold].index
             aug_pats = self.data.y[['rotation' in pat for pat in self.data.y.index]].index
             aug_fold_pats = [pat for pat in aug_pats if np.any([fold_pat in pat for fold_pat in fold_pats])]
             self.train_splits[fold_idx].extend(self.data.y.index.get_indexer(aug_fold_pats))
@@ -118,7 +126,18 @@ class RunModel(object):
 
 
     def set_data_module(self):
-        self.data_module_cross_val = [LightningDataset(train_dataset=self.data[fold], val_dataset=self.data[self.val_splits[idx]], test_dataset=self.data[self.test_splits], batch_size=self.config['batch_size'], num_workers=16, pin_memory=True, persistent_workers=False, shuffle=True, drop_last=False) for idx, fold in enumerate(self.train_splits)] 
+        self.data_module_cross_val = [LightningDataset(
+            train_dataset=self.data[fold], 
+            val_dataset=self.data[self.val_splits[idx]], 
+            test_dataset=self.data[self.test_splits], 
+            batch_size=self.config['batch_size'], 
+            num_workers=16, 
+            pin_memory=True, 
+            persistent_workers=False, 
+            #shuffle=True, 
+            drop_last=False,) 
+            #sampler=PositiveSampler(self.data[fold], self.config)) 
+            for idx, fold in enumerate(self.train_splits)] 
 
 
 
@@ -132,6 +151,7 @@ class RunModel(object):
             save_top_k=self.config['save_top_k'],
             dirpath=os.path.join(self.log_dir, f"top_models_fold_{fold_idx}"),
             filename='model_auc_{epoch:02d}_{val_loss:.2f}_{val_auc:.2f}_{val_m:.2f}',
+            #filename='model_auc_{epoch:02d}_{val_loss:.2f}_{val_ci:.2f}',
             ))     
         self.callbacks.append(L.callbacks.ModelCheckpoint(
             monitor='val_loss',
@@ -139,6 +159,7 @@ class RunModel(object):
             save_top_k=self.config['save_top_k'],
             dirpath=os.path.join(self.log_dir, f"top_models_fold_{fold_idx}"),
             filename='model_loss_{epoch:02d}_{val_loss:.2f}_{val_auc:.2f}_{val_m:.2f}',
+            #filename='model_loss_{epoch:02d}_{val_loss:.2f}_{val_ci:.2f}',
             ))     
         self.callbacks.append(L.callbacks.ModelCheckpoint(
             monitor='val_m',
@@ -181,6 +202,7 @@ class RunModel(object):
                 devices=self.config['gpu_device'] if torch.cuda.is_available() else None,
                 logger=[L.loggers.CSVLogger(save_dir=os.path.join(self.log_dir, f"csvlog_fold_{idx}")), L.loggers.TensorBoardLogger(save_dir=os.path.join(self.log_dir, f"tb_fold_{idx}"))],
                 callbacks=self.callbacks,
+                #log_every_n_steps = 10
                 #check_val_every_n_epoch = 1,
                 #auto_lr_find=True
                 ))
@@ -276,12 +298,19 @@ class RunModel(object):
                 self.test_predictions_dict[monitor].append(torch.cat(trainer.predict(trainer.model, self.data_module_cross_val[idx].test_dataloader(), ckpt_path=best_model)))
                 self.val_predictions_dict[monitor].append(torch.cat(trainer.predict(trainer.model, self.data_module_cross_val[idx].val_dataloader(), ckpt_path=best_model)))
 
-            for batch in self.data_module_cross_val[idx].test_dataloader():
-                tmp_test_targets.append(batch.y)
-            for batch in self.data_module_cross_val[idx].val_dataloader():
-                tmp_val_targets.append(batch.y)
+            if self.config['multi_label']:
+                for batch in self.data_module_cross_val[idx].test_dataloader():
+                    tmp_test_targets.append(torch.stack([batch.y, batch.lm, batch.rm, batch.death]))
+                for batch in self.data_module_cross_val[idx].val_dataloader():
+                    tmp_val_targets.append(torch.stack([batch.y, batch.lm, batch.rm, batch.death]))
+            else:
+                for batch in self.data_module_cross_val[idx].test_dataloader():
+                    tmp_test_targets.append(batch.y)
+                for batch in self.data_module_cross_val[idx].val_dataloader():
+                    tmp_val_targets.append(batch.y)
 
             self.test_targets.append(torch.cat(tmp_test_targets))
+            #self.val_targets.append(torch.cat(tmp_val_targets[:-1]))
             self.val_targets.append(torch.cat(tmp_val_targets))
 
         self.test_predictions_df = pd.DataFrame(self.test_predictions_dict)

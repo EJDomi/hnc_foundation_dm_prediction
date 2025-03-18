@@ -136,14 +136,13 @@ class UNETR(nn.Module):
         x = torch.cat((x, clin_var), dim=1)
 
         x = self.fc_layers1(x)
-        return x
-        #risk_out1 = self.mtlr1(x)
-        #risk_out2 = self.mtlr2(x)
-        #risk_out3 = self.mtlr3(x)
-        #risk_out4 = self.mtlr4(x)
-        #risk_out5 = self.mtlr5(x)
+        risk_out1 = self.mtlr1(x)
+        risk_out2 = self.mtlr2(x)
+        risk_out3 = self.mtlr3(x)
+        risk_out4 = self.mtlr4(x)
+        risk_out5 = self.mtlr5(x)
         
-        #return risk_out1,  risk_out2, risk_out3, risk_out4, risk_out5
+        return risk_out1,  risk_out2, risk_out3, risk_out4, risk_out5
 
 
 
@@ -248,8 +247,6 @@ class ViT(nn.Module):
             self.cls_token = nn.Parameter(torch.zeros(1, 1, hidden_size))
             self.classification_head = nn.Sequential(nn.Linear(hidden_size, num_classes), nn.Tanh())
             
-        ## Projection of EHR
-        self.EHR_proj = nn.Linear(hidden_size, hidden_size)
 
 
     def forward(self, x):
@@ -372,7 +369,6 @@ class PatchEmbeddingBlock(nn.Module):
                 Rearrange(f"{from_chars} -> {to_chars}", **axes_len), nn.Linear(self.patch_dim, hidden_size)
             )
             
-        self.EHR_proj = nn.Sequential(nn.Linear(n_clin_var, hidden_size))
 
 
         self.position_embeddings = nn.Parameter(torch.zeros(1, self.n_patches, hidden_size))

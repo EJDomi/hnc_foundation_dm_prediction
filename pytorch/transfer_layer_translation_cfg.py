@@ -1,8 +1,5 @@
-from collections import OrderedDict
-
-
-layer_loop = OrderedDict()
-layer_loop_downsample = OrderedDict()
+layer_loop = {}
+layer_loop_downsample = {}
 for j in range(3):
     layer_loop[f"layer1.{j}"] = f"{0}.{j}"
 for j in range(4):

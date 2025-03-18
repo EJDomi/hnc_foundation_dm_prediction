@@ -1,9 +1,11 @@
 #!/usr/bin/env python
+import os
 import torch
 from torch import nn
 from torch.autograd import Variable
 import torch.nn.functional as F
 import math
+from hnc_project.pytorch.transfer_layer_translation_cfg import layer_loop, layer_loop_downsample 
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -289,8 +291,8 @@ class SpotTune(nn.Module):
         self.resnet = globals()[main](n_classes=num_classes, in_channels=in_channels, dropout=dropout)
         self.agent = Agent(BasicBlock, [1,1,1,1], in_channels=in_channels, num_classes=(sum(self.resnet.layers)*2), dropout=dropout)
 
-        initial_state = torch.load(os.path.join('./weights', weight_map[main]))['state_dict']
-        fixed_state = OrderedDict()
+        initial_state = torch.load(os.path.join('./models', weight_map[main]))['state_dict']
+        fixed_state = {}
         for k, v in initial_state.items():
             if 'layer' in k:
                 mod_name = k.replace('module', 'blocks')
@@ -304,16 +306,15 @@ class SpotTune(nn.Module):
                     mod_name = mod_name.replace(name, new)
             fixed_state[mod_name] = v
 
-        fixed_state_v2 = OrderedDict()
+        fixed_state_v2 = {}
         for k, v in fixed_state.items():
             fixed_state_v2[k] = v
             fixed_state_v2[k.replace('blocks', 'parallel_blocks')] = v
 
-        if self.n_channels > 1:
-            fixed_state_v2['conv1.weight'] = fixed_state['conv1.weight'].repeat(1,self.n_channels,1,1,1)/self.n_channels
+        if in_channels > 1:
+            fixed_state_v2['conv1.weight'] = fixed_state['conv1.weight'].repeat(1,in_channels,1,1,1)/in_channels
 
         self.resnet.load_state_dict(fixed_state_v2, strict=False)
-        self.freeze_layers(ignore=['classify', 'parallel_blocks'])
         for name, p in self.resnet.named_parameters():
             if any([i in name for i in ['classify', 'parallel_blocks']]):
                 p.requires_grad=True
@@ -359,22 +360,22 @@ class SpotTune(nn.Module):
 
 
 def main18(n_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock):
-    return ResNet(blocks, [2,2,2,2], in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+    return MainResNet(blocks, [2,2,2,2], in_channels=in_channels, num_classes=n_classes, dropout=dropout)
 
 def main34(n_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock):
-    return ResNet(blocks, [3,4,6,3], in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+    return MainResNet(blocks, [3,4,6,3], in_channels=in_channels, num_classes=n_classes, dropout=dropout)
 
 def main50(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
-    return ResNet(blocks, [3,4,6,3], in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+    return MainResNet(blocks, [3,4,6,3], in_channels=in_channels, num_classes=n_classes, dropout=dropout)
 
 def main101(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
-    return ResNet(blocks, [3,4,23,3], in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+    return MainResNet(blocks, [3,4,23,3], in_channels=in_channels, num_classes=n_classes, dropout=dropout)
 
 def main152(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
-    return ResNet(blocks, [3,8,36,3], in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+    return MainResNet(blocks, [3,8,36,3], in_channels=in_channels, num_classes=n_classes, dropout=dropout)
 
 def main200(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
-    return ResNet(blocks, [3,24,36,3], in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+    return MainResNet(blocks, [3,24,36,3], in_channels=in_channels, num_classes=n_classes, dropout=dropout)
 
 
 def spottune18(n_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock):

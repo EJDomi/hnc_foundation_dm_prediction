@@ -6,7 +6,9 @@ from hnc_project.pytorch.resnet_lightning import *
 from hnc_project.pytorch.sgc_cnn import SGC_CNN 
 from hnc_project.pytorch.densenet import DenseNet3d 
 from hnc_project.pytorch.net_swin import SwinTransformer
-
+from hnc_project.pytorch.resnet_spottune import SpotTune
+#from hnc_project.pytorch.net_vit import ViT
+from monai.networks.nets.vit import ViT
 
 
 
@@ -16,7 +18,7 @@ def resnet18(n_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock):
 def resnet34(n_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock):
     return ResNet(blocks, [3,4,6,3], in_channels=in_channels, n_classes=n_classes, dropout=dropout)
 
-def resnet50(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
+def resnet50(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck, config=None):
     return ResNet(blocks, [3,4,6,3], in_channels=in_channels, n_classes=n_classes, dropout=dropout)
 
 def resnet101(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
@@ -30,7 +32,27 @@ def resnet200(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
 def densenet3d(n_classes=1, in_channels=64, dropout = 0.0):
     return DenseNet3d(num_classes=n_classes, in_channels=in_channels, dropout_p=dropout)
 
-def swin(n_classes=1, in_channels=64, dropout = 0.0):
+def spottune18(n_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock):
+    return SpotTune(main='main18', in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+
+def spottune34(n_classes=1, in_channels=3, dropout=0.0, blocks=BasicBlock):
+    return SpotTune(main='main34', in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+
+def spottune50(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
+    return SpotTune(main='main50', in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+
+def spottune101(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
+    return SpotTune(main='main101', in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+
+def spottune152(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
+    return SpotTune(main='main152', in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+
+def spottune200(n_classes=1, in_channels=3, dropout=0.0, blocks=Bottleneck):
+    return SpotTune(main='main200', in_channels=in_channels, num_classes=n_classes, dropout=dropout)
+
+
+
+def swin(n_classes=1, in_channels=3, dropout = 0.0):
     return SwinTransformer(patch_size=2,
             in_chans=in_channels, 
             embed_dim=96, 
@@ -45,6 +67,68 @@ def swin(n_classes=1, in_channels=64, dropout = 0.0):
             out_indices=(0,1,2,3),
             pat_merg_rf=4)
 
+def vit(n_classes=1, in_channels=3, dropout=0.0):
+    return ViT(
+        in_channels=in_channels,
+        img_size = (80,80,80),
+        patch_size = 16,
+        hidden_size = 768,
+        mlp_dim = 3072,
+        num_layers = 10,
+        num_heads = 12,
+        pos_embed = "conv",
+        classification = True,
+        num_classes = n_classes,
+        dropout_rate = dropout,
+        spatial_dims = 3,
+        )
+
+
+class EmptyNetwork(nn.Module):
+    def __init__(self, n_classes, in_channels=2, dropout=0.5):
+        super(EmptyNetwork, self).__init__()
+        self.identity = nn.Identity()
+
+    def forward(self, x):
+        #x = global_mean_pool(x, batch)
+        return self.identity(x)
+
+
+class LinearNet(nn.Module):
+    def __init__(self, n_classes=1, in_channels=1316, dropout=0.0):
+        super(LinearNet, self).__init__()
+        self.linear1 = nn.Linear(in_channels, 2)
+        self.linear2 = nn.Linear(2, 2)
+        self.linear3 = nn.Linear(2, n_classes)
+        self.relu = nn.LeakyReLU()
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, clinical=None):
+        if x.dim() > 2:
+            x = torch.flatten(x, start_dim=1)
+        if clinical is not None:
+            #clinical = torch.unique(clinical, dim=0)
+            x = torch.cat((x, clinical), 1)
+        else:
+            x = x
+        x = self.linear1(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+        x = self.linear2(x) 
+        x = self.relu(x)
+        x = self.dropout(x)
+        x = self.linear3(x) 
+        x = self.relu(x)
+        x = self.dropout(x)
+
+        # the following is get the shape right so pytorch doesn't yell at you, 
+        # in the off chance that the batch only has 1 entry
+        if len(x) == 1:
+            x = x.squeeze().unsqueeze(0)
+        else:
+            x = x.squeeze()
+        return x
+ 
 class LNCNN(nn.Module):
     def __init__(self, n_classes, in_channels, dropout):
         super(LNCNN, self).__init__()
