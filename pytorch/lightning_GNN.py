@@ -5,8 +5,6 @@ from torch import nn
 import torch.nn.functional as F
 from torch_geometric.nn import global_mean_pool
 
-from torchmtlr import (MTLR, mtlr_neg_log_likelihood, mtlr_survival)
-
 import torchvision
 import torchmetrics
 
@@ -34,17 +32,6 @@ class Classify(nn.Module):
             x = x.squeeze().unsqueeze(0)
         else:
             x = x.squeeze()
-        return x
-
-class ClassifyMTLR(nn.Module):
-    def __init__(self, in_channels, time_bins):
-        super().__init__()
-
-        self.mtlr = MTLR(in_channels, time_bins)
-
-    def forward(self, x):
-        x = self.mtlr(x)
-
         return x
 
 
@@ -76,11 +63,8 @@ class CNN_GNN(L.LightningModule):
       
         if self.config['multi_label'] and self.config['n_classes'] != 4:
             raise Exception('number of classes too small for multi-label')
-        if self.config['regression']:
 
-            self.classify = ClassifyMTLR(in_channels, self.config['time_bins'])
-        else:
-            self.classify = Classify(in_channels=in_channels, n_classes=self.config['n_classes'])
+        self.classify = Classify(in_channels=in_channels, n_classes=self.config['n_classes'])
 
         self.loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([self.config['class_weight']]))
         #self.val_loss_fn = nn.BCEWithLogitsLoss()
@@ -102,11 +86,6 @@ class CNN_GNN(L.LightningModule):
             self.test_ap_fn = torchmetrics.classification.MultilabelAveragePrecision(num_labels=self.config['n_classes'], average='micro')
             self.test_spe_fn = torchmetrics.classification.MultilabelSpecificity(num_labels=self.config['n_classes'], average='micro')
             self.test_sen_fn = torchmetrics.classification.MultilabelRecall(num_labels=self.config['n_classes'], average='micro')
-        elif self.config['regression']:
-            self.ci_fn = um.ConcordanceIndex()
-            self.val_ci_fn = um.ConcordanceIndex()
-            self.test_ci_fn = um.ConcordanceIndex()
-
         else:
             self.auc_fn = torchmetrics.classification.BinaryAUROC()
             self.ap_fn = torchmetrics.classification.BinaryAveragePrecision()
@@ -299,30 +278,21 @@ class CNN_GNN(L.LightningModule):
                           batch.rm.unsqueeze(0),
                           batch.death.unsqueeze(0))).T
 
-        elif self.config['regression']:
-            y = batch.survival
-            loss = mtlr_neg_log_likelihood(pred, y, nn.Sequential(self.extractor, self.gnn, self.classify), C1=1., average=True)
-        else:
-            loss = self.loss_fn(pred, batch.y.to(torch.float))
-            y = batch.y
+        loss = self.loss_fn(pred, batch.y.to(torch.float))
+        y = batch.y
 
 
-        if self.config['regression']:
-            self.ci_fn(preds=pred, events=batch.event[:,0], times=batch.event[:,1])
-            self.log("train_ci", self.ci_fn, on_step=False, on_epoch=True, batch_size = len(batch.batch), prog_bar=True)
-            self.log("train_loss", loss, on_step=False, on_epoch=True, batch_size=len(batch.batch), prog_bar=True)
-        else:
-            self.auc_fn(pred, y.to(torch.int64)) 
-            self.ap_fn(pred, y.to(torch.int64)) 
-            self.sen_fn(pred, y) 
-            self.spe_fn(pred, y) 
-            
-            self.log("train_loss", loss, on_step=False, on_epoch=True, batch_size=len(batch.batch), prog_bar=True)
-            self.log("train_auc", self.auc_fn, on_step=False, on_epoch=True, batch_size=len(batch.batch), prog_bar=True)
-            self.log("train_ap", self.ap_fn, on_step=False, on_epoch=True, batch_size=len(batch.batch))
-            self.log("train_m", self.m_fn(self.sen_fn.compute(), self.spe_fn.compute()).mean(), on_step=False, on_epoch=True, batch_size=len(batch.batch))
-            self.log("train_sen", self.sen_fn, on_step=False, on_epoch=True, batch_size=len(batch.batch))
-            self.log("train_spe", self.spe_fn, on_step=False, on_epoch=True, batch_size=len(batch.batch))
+        self.auc_fn(pred, y.to(torch.int64)) 
+        self.ap_fn(pred, y.to(torch.int64)) 
+        self.sen_fn(pred, y) 
+        self.spe_fn(pred, y) 
+        
+        self.log("train_loss", loss, on_step=False, on_epoch=True, batch_size=len(batch.batch), prog_bar=True)
+        self.log("train_auc", self.auc_fn, on_step=False, on_epoch=True, batch_size=len(batch.batch), prog_bar=True)
+        self.log("train_ap", self.ap_fn, on_step=False, on_epoch=True, batch_size=len(batch.batch))
+        self.log("train_m", self.m_fn(self.sen_fn.compute(), self.spe_fn.compute()).mean(), on_step=False, on_epoch=True, batch_size=len(batch.batch))
+        self.log("train_sen", self.sen_fn, on_step=False, on_epoch=True, batch_size=len(batch.batch))
+        self.log("train_spe", self.spe_fn, on_step=False, on_epoch=True, batch_size=len(batch.batch))
 
         return {'loss': loss, 'dm_loss': dm_loss, 'lm_loss': lm_loss, 'rm_loss': rm_loss, 'death_loss': death_loss} if self.config['multi_label'] else loss
 
@@ -342,31 +312,23 @@ class CNN_GNN(L.LightningModule):
                           batch.lm.unsqueeze(0),
                           batch.rm.unsqueeze(0),
                           batch.death.unsqueeze(0))).T
-        elif self.config['regression']:
-            y = batch.survival
-            val_loss = mtlr_neg_log_likelihood(pred, y, nn.Sequential(self.extractor, self.gnn, self.classify), C1=1., average=True)
         else:
             val_loss = self.loss_fn(pred, batch.y.to(torch.float))
             y = batch.y
 
 
-        if self.config['regression']:
-            self.val_ci_fn(preds=pred, events=batch.event[:,0], times=batch.event[:,1])
-            self.log_dict({"val_loss": torch.tensor([val_loss]),
-                "val_ci": self.val_ci_fn}, batch_size=len(batch.batch), prog_bar=True)
-        else:
-            self.val_auc_fn(pred, y.to(torch.int64)) 
-            self.val_ap_fn(pred, y.to(torch.int64)) 
-            self.val_sen_fn(pred, y) 
-            self.val_spe_fn(pred, y) 
+        self.val_auc_fn(pred, y.to(torch.int64)) 
+        self.val_ap_fn(pred, y.to(torch.int64)) 
+        self.val_sen_fn(pred, y) 
+        self.val_spe_fn(pred, y) 
 
-            self.log_dict({"val_loss": torch.tensor([val_loss]),
-            "val_auc": self.val_auc_fn,
-            "val_ap": self.val_ap_fn,
-            "val_m": self.m_fn(self.val_sen_fn.compute(), self.val_spe_fn.compute()).mean(),
-            "val_sen": self.val_sen_fn,
-            "val_spe": self.val_spe_fn,
-            }, batch_size=len(batch.batch), prog_bar=True)
+        self.log_dict({"val_loss": torch.tensor([val_loss]),
+        "val_auc": self.val_auc_fn,
+        "val_ap": self.val_ap_fn,
+        "val_m": self.m_fn(self.val_sen_fn.compute(), self.val_spe_fn.compute()).mean(),
+        "val_sen": self.val_sen_fn,
+        "val_spe": self.val_spe_fn,
+        }, batch_size=len(batch.batch), prog_bar=True)
 
         return {"val_loss": val_loss, 'dm_val_loss': dm_val_loss, 'lm_val_loss': lm_val_loss, 'rm_val_loss': rm_val_loss, 'death_val_loss': death_val_loss} if self.config['multi_label'] else {"val_loss": val_loss}
 
@@ -387,26 +349,19 @@ class CNN_GNN(L.LightningModule):
                           batch.lm.unsqueeze(0),
                           batch.rm.unsqueeze(0),
                           batch.death.unsqueeze(0))).T
-        elif self.config['regression']:
-            y = batch.survival
-            loss = mtlr_neg_log_likelihood(pred, y, nn.Sequential(self.extractor, self.gnn, self.classify), C1=1., average=True)
         else:
             test_loss = self.loss_fn(pred, batch.y.to(torch.float))
             y = batch.y
 
-        if self.config['regression']:
-            self.test_ci_fn(pred, events=batch.event[:,0], times=batch.event[:,1])
-            self.log("test_ci", self.test_ci_fn)
-        else:
-            self.test_auc_fn(pred, y.to(torch.int64)) 
-            self.test_ap_fn(pred, y.to(torch.int64)) 
-            self.test_sen_fn(pred, y) 
-            self.test_spe_fn(pred, y) 
-            self.log("test_auc", self.test_auc_fn)
-            self.log("test_ap", self.test_ap_fn)
-            self.log("test_m", self.m_fn(self.test_sen_fn.compute(), self.test_spe_fn.compute()).mean())
-            self.log("test_sen", self.test_sen_fn)
-            self.log("test_spe", self.test_spe_fn)
+        self.test_auc_fn(pred, y.to(torch.int64)) 
+        self.test_ap_fn(pred, y.to(torch.int64)) 
+        self.test_sen_fn(pred, y) 
+        self.test_spe_fn(pred, y) 
+        self.log("test_auc", self.test_auc_fn)
+        self.log("test_ap", self.test_ap_fn)
+        self.log("test_m", self.m_fn(self.test_sen_fn.compute(), self.test_spe_fn.compute()).mean())
+        self.log("test_sen", self.test_sen_fn)
+        self.log("test_spe", self.test_spe_fn)
 
 
     def predict_step(self, batch, batch_idx):

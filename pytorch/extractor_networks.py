@@ -7,7 +7,6 @@ from hnc_project.pytorch.sgc_cnn import SGC_CNN
 from hnc_project.pytorch.densenet import DenseNet3d 
 from hnc_project.pytorch.net_swin import SwinTransformer
 from hnc_project.pytorch.resnet_spottune import SpotTune
-#from hnc_project.pytorch.net_vit import ViT
 from monai.networks.nets.vit import ViT
 
 
