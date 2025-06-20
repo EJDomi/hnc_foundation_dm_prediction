@@ -13,7 +13,7 @@ import SimpleITK as sitk
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from skimage.util import random_noise
 
-from hnc_project import data_prep as dp
+from hnc_foundation_dm_prediction import data_prep as dp
 import torch
 from torch.utils.data import Sampler
 from torchmtlr.utils import make_time_bins, encode_survival

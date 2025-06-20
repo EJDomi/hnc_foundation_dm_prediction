@@ -25,18 +25,18 @@ from torch.utils.tensorboard import SummaryWriter
 import torchvision
 import torchmetrics
 
-from hnc_project.pytorch.dataset_class import DatasetGeneratorRadiomics, DatasetGeneratorImage, DatasetGeneratorBoth
-from hnc_project.pytorch.densenet import DenseNet3d
-from hnc_project.pytorch.simple_gcn import SimpleGCN
-from hnc_project.pytorch.gated_gcn import GatedGCN, ClinicalGatedGCN
-from hnc_project.pytorch.deep_gcn import DeepGCN, AltDeepGCN
-from hnc_project.pytorch.graphu_gcn import myGraphUNet
-from hnc_project.pytorch.resnet import resnet18, resnet34, resnet50, resnet101, resnet152, resnet200
-import hnc_project.pytorch.graphag_resnet as ga
-import hnc_project.pytorch.resnet_2d as res2d
-from hnc_project.pytorch.cnn import CNN
-from hnc_project.pytorch.resnet_spottune import SpotTune
-from hnc_project.pytorch.transfer_layer_translation_cfg import layer_loop, layer_loop_downsample
+from hnc_foundation_dm_prediction.pytorch.dataset_class import DatasetGeneratorRadiomics, DatasetGeneratorImage, DatasetGeneratorBoth
+from hnc_foundation_dm_prediction.pytorch.densenet import DenseNet3d
+from hnc_foundation_dm_prediction.pytorch.simple_gcn import SimpleGCN
+from hnc_foundation_dm_prediction.pytorch.gated_gcn import GatedGCN, ClinicalGatedGCN
+from hnc_foundation_dm_prediction.pytorch.deep_gcn import DeepGCN, AltDeepGCN
+from hnc_foundation_dm_prediction.pytorch.graphu_gcn import myGraphUNet
+from hnc_foundation_dm_prediction.pytorch.resnet import resnet18, resnet34, resnet50, resnet101, resnet152, resnet200
+import hnc_foundation_dm_prediction.pytorch.graphag_resnet as ga
+import hnc_foundation_dm_prediction.pytorch.resnet_2d as res2d
+from hnc_foundation_dm_prediction.pytorch.cnn import CNN
+from hnc_foundation_dm_prediction.pytorch.resnet_spottune import SpotTune
+from hnc_foundation_dm_prediction.pytorch.transfer_layer_translation_cfg import layer_loop, layer_loop_downsample
 
 MODELS = ['SimpleGCN',
           'ResNetGCN',

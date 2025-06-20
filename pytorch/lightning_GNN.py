@@ -11,9 +11,9 @@ import torchmetrics
 import pytorch_lightning as L
 
 from lifelines.utils import concordance_index
-import hnc_project.pytorch.extractor_networks as en
-import hnc_project.pytorch.gnn_networks as graphs
-import hnc_project.pytorch.user_metrics as um
+import hnc_foundation_dm_prediction.pytorch.extractor_networks as en
+import hnc_foundation_dm_prediction.pytorch.gnn_networks as graphs
+import hnc_foundation_dm_prediction.pytorch.user_metrics as um
 
 class Classify(nn.Module):
     def __init__(self, in_channels, n_classes):

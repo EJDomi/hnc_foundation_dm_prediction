@@ -2,11 +2,11 @@ import torch
 from torch import nn
 from torch.nn import LeakyReLU, Dropout
 
-from hnc_project.pytorch.resnet_lightning import * 
-from hnc_project.pytorch.sgc_cnn import SGC_CNN 
-from hnc_project.pytorch.densenet import DenseNet3d 
-from hnc_project.pytorch.net_swin import SwinTransformer
-from hnc_project.pytorch.resnet_spottune import SpotTune
+from hnc_foundation_dm_prediction.pytorch.resnet_lightning import * 
+from hnc_foundation_dm_prediction.pytorch.sgc_cnn import SGC_CNN 
+from hnc_foundation_dm_prediction.pytorch.densenet import DenseNet3d 
+from hnc_foundation_dm_prediction.pytorch.net_swin import SwinTransformer
+from hnc_foundation_dm_prediction.pytorch.resnet_spottune import SpotTune
 from monai.networks.nets.vit import ViT
 
 

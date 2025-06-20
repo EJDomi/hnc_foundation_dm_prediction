@@ -21,8 +21,8 @@ import torchmetrics
 
 import pytorch_lightning as L
 
-from hnc_project.pytorch.lightning_GNN import CNN_GNN 
-from hnc_project.pytorch.dataset_class import DatasetGeneratorImage, PositiveSampler
+from hnc_foundation_dm_prediction.pytorch.lightning_GNN import CNN_GNN 
+from hnc_foundation_dm_prediction.pytorch.dataset_class import DatasetGeneratorImage, PositiveSampler
 
 MODELS = ['SimpleGCN',
           'ResNetGCN',

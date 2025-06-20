@@ -3,8 +3,8 @@ from torch import nn
 from torch.nn import Linear, ReLU, Dropout, Identity
 from torch_geometric.nn import GCNConv, BatchNorm, ResGatedGraphConv
 from torch_geometric.nn import global_mean_pool
-from hnc_project.pytorch.resnet import resnet50
-from hnc_project.pytorch.transfer_layer_translation_cfg import layer_loop, layer_loop_downsample
+from hnc_foundation_dm_prediction.pytorch.resnet import resnet50
+from hnc_foundation_dm_prediction.pytorch.transfer_layer_translation_cfg import layer_loop, layer_loop_downsample
  
 class ResNetGCN(nn.Module):
     def __init__(self, in_channels, hidden_channels, num_classes, dropout=0.5):
